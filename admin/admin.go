@@ -19,9 +19,12 @@ package admin
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/apache/rocketmq-client-go/v2/internal"
 	"github.com/apache/rocketmq-client-go/v2/internal/remote"
@@ -80,6 +83,18 @@ func WithNamespace(namespace string) AdminOption {
 func WithTls(useTls bool) AdminOption {
 	return func(options *adminOptions) {
 		options.ClientOptions.RemotingClientConfig.UseTls = useTls
+	}
+}
+
+func WithTLSConf(tlsConf *tls.Config) AdminOption {
+	return func(options *adminOptions) {
+		options.ClientOptions.RemotingClientConfig.TLSConf = tlsConf
+	}
+}
+
+func WithCustomDialer(dialer proxy.Dialer) AdminOption {
+	return func(options *adminOptions) {
+		options.ClientOptions.RemotingClientConfig.CustomDialer = dialer
 	}
 }
 

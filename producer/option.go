@@ -18,8 +18,11 @@ limitations under the License.
 package producer
 
 import (
+	"crypto/tls"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/apache/rocketmq-client-go/v2/internal"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
@@ -191,5 +194,17 @@ func WithRemotingTimeout(connectionTimeout, readTimeout, writeTimeout time.Durat
 func WithTls(useTls bool) Option {
 	return func(opts *producerOptions) {
 		opts.ClientOptions.RemotingClientConfig.UseTls = useTls
+	}
+}
+
+func WithTLSConf(tlsConf *tls.Config) Option {
+	return func(opts *producerOptions) {
+		opts.ClientOptions.RemotingClientConfig.TLSConf = tlsConf
+	}
+}
+
+func WithCustomDialer(dialer proxy.Dialer) Option {
+	return func(opts *producerOptions) {
+		opts.ClientOptions.RemotingClientConfig.CustomDialer = dialer
 	}
 }

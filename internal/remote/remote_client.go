@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"github.com/apache/rocketmq-client-go/v2/internal/utils"
 	"io"
@@ -27,8 +28,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"golang.org/x/net/proxy"
 
+	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 )
 
@@ -40,6 +42,8 @@ type TcpOption struct {
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	UseTls            bool
+	TLSConf           *tls.Config
+	CustomDialer      proxy.Dialer
 }
 
 //go:generate mockgen -source remote_client.go -destination mock_remote_client.go -self_package github.com/apache/rocketmq-client-go/v2/internal/remote  --package remote RemotingClient
