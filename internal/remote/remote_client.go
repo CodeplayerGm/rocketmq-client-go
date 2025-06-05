@@ -71,18 +71,20 @@ type RemotingClientConfig struct {
 	TcpOption
 }
 
-var DefaultRemotingClientConfig = RemotingClientConfig{defaultTcpOption}
-
-var defaultTcpOption = TcpOption{
-	KeepAliveDuration: 0, // default 15s in golang
-	ConnectionTimeout: time.Second * 15,
-	ReadTimeout:       time.Second * 120,
-	WriteTimeout:      time.Second * 120,
+func DefaultRemotingClientConfig() *RemotingClientConfig {
+	return &RemotingClientConfig{
+		TcpOption: TcpOption{
+			KeepAliveDuration: 0, // default 15s in golang
+			ConnectionTimeout: time.Second * 15,
+			ReadTimeout:       time.Second * 120,
+			WriteTimeout:      time.Second * 120,
+		},
+	}
 }
 
 func NewRemotingClient(config *RemotingClientConfig) *remotingClient {
 	if config == nil {
-		config = &DefaultRemotingClientConfig
+		config = DefaultRemotingClientConfig()
 	}
 
 	return &remotingClient{

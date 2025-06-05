@@ -100,7 +100,7 @@ func DefaultClientOptions() ClientOptions {
 		InstanceName:         "DEFAULT",
 		RetryTimes:           3,
 		ClientIP:             utils.LocalIP,
-		RemotingClientConfig: &remote.DefaultRemotingClientConfig,
+		RemotingClientConfig: remote.DefaultRemotingClientConfig(),
 	}
 	return opts
 }
@@ -411,8 +411,8 @@ func GetOrNewRocketMQClient(option ClientOptions, callbackCh chan interface{}) R
 }
 
 func (c *rmqClient) Start() {
-	//ctx, cancel := context.WithCancel(context.Background())
-	//c.cancel = cancel
+	// ctx, cancel := context.WithCancel(context.Background())
+	// c.cancel = cancel
 	atomic.AddInt32(&c.instanceCount, 1)
 	c.once.Do(func() {
 		if !c.option.Credentials.IsEmpty() {
