@@ -30,11 +30,12 @@ import (
 
 func main() {
 	p, _ := rocketmq.NewProducer(
+		context.Background(),
 		producer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		producer.WithRetry(2),
 		producer.WithInterceptor(UserFirstInterceptor(), UserSecondInterceptor()),
 	)
-	err := p.Start()
+	err := p.Start(context.Background())
 	if err != nil {
 		fmt.Printf("start producer error: %s", err.Error())
 		os.Exit(1)
@@ -49,7 +50,7 @@ func main() {
 			fmt.Printf("send message success: result=%s\n", res.String())
 		}
 	}
-	err = p.Shutdown()
+	err = p.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("shutdown producer error: %s", err.Error())
 	}

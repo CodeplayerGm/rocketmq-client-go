@@ -28,8 +28,8 @@ import (
 )
 
 type Producer interface {
-	Start() error
-	Shutdown() error
+	Start(ctx context.Context) error
+	Shutdown(ctx context.Context) error
 	SendSync(ctx context.Context, mq ...*primitive.Message) (*primitive.SendResult, error)
 	SendAsync(ctx context.Context, mq func(ctx context.Context, result *primitive.SendResult, err error),
 		msg ...*primitive.Message) error
@@ -38,64 +38,64 @@ type Producer interface {
 	RequestAsync(ctx context.Context, ttl time.Duration, callback internal.RequestCallback, msg *primitive.Message) error
 }
 
-func NewProducer(opts ...producer.Option) (Producer, error) {
-	return producer.NewDefaultProducer(opts...)
+func NewProducer(ctx context.Context, opts ...producer.Option) (Producer, error) {
+	return producer.NewDefaultProducer(ctx, opts...)
 }
 
 type TransactionProducer interface {
-	Start() error
-	Shutdown() error
+	Start(ctx context.Context) error
+	Shutdown(ctx context.Context) error
 	SendMessageInTransaction(ctx context.Context, mq *primitive.Message) (*primitive.TransactionSendResult, error)
 }
 
-func NewTransactionProducer(listener primitive.TransactionListener, opts ...producer.Option) (TransactionProducer, error) {
-	return producer.NewTransactionProducer(listener, opts...)
+func NewTransactionProducer(ctx context.Context, listener primitive.TransactionListener, opts ...producer.Option) (TransactionProducer, error) {
+	return producer.NewTransactionProducer(ctx, listener, opts...)
 }
 
 type PushConsumer interface {
 	// Start the PushConsumer for consuming message
-	Start() error
+	Start(ctx context.Context) error
 
 	// Shutdown the PushConsumer, all offset of MessageQueue will be sync to broker before process exit
-	Shutdown() error
+	Shutdown(ctx context.Context) error
 	// Subscribe a topic for consuming
-	Subscribe(topic string, selector consumer.MessageSelector,
+	Subscribe(ctx context.Context, topic string, selector consumer.MessageSelector,
 		f func(context.Context, ...*primitive.MessageExt) (consumer.ConsumeResult, error)) error
 
 	// Unsubscribe a topic
-	Unsubscribe(topic string) error
+	Unsubscribe(ctx context.Context, topic string) error
 
 	// Suspend the consumption
-	Suspend()
+	Suspend(ctx context.Context)
 
 	// Resume the consumption
-	Resume()
+	Resume(ctx context.Context)
 
 	// GetOffsetDiffMap Get offset difference map
-	GetOffsetDiffMap() map[string]int64
+	GetOffsetDiffMap(ctx context.Context) map[string]int64
 }
 
-func NewPushConsumer(opts ...consumer.Option) (PushConsumer, error) {
-	return consumer.NewPushConsumer(opts...)
+func NewPushConsumer(ctx context.Context, opts ...consumer.Option) (PushConsumer, error) {
+	return consumer.NewPushConsumer(ctx, opts...)
 }
 
 type PullConsumer interface {
 	// Start the PullConsumer for consuming message
-	Start() error
+	Start(ctx context.Context) error
 	// GetTopicRouteInfo get topic route info
-	GetTopicRouteInfo(topic string) ([]*primitive.MessageQueue, error)
+	GetTopicRouteInfo(ctx context.Context, topic string) ([]*primitive.MessageQueue, error)
 
 	// Subscribe a topic for consuming
-	Subscribe(topic string, selector consumer.MessageSelector) error
+	Subscribe(ctx context.Context, topic string, selector consumer.MessageSelector) error
 
 	// Unsubscribe a topic
-	Unsubscribe(topic string) error
+	Unsubscribe(ctx context.Context, topic string) error
 
 	// Assign assign message queue to consumer
-	Assign(topic string, mqs []*primitive.MessageQueue) error
+	Assign(ctx context.Context, topic string, mqs []*primitive.MessageQueue) error
 
 	// Shutdown the PullConsumer, all offset of MessageQueue will be commit to broker before process exit
-	Shutdown() error
+	Shutdown(ctx context.Context) error
 
 	// Poll messages with timeout.
 	Poll(ctx context.Context, timeout time.Duration) (*consumer.ConsumeRequest, error)
@@ -110,23 +110,23 @@ type PullConsumer interface {
 	PullFrom(ctx context.Context, queue *primitive.MessageQueue, offset int64, numbers int) (*primitive.PullResult, error)
 
 	// SeekOffset seek offset for specific queue
-	SeekOffset(queue *primitive.MessageQueue, offset int64)
+	SeekOffset(ctx context.Context, queue *primitive.MessageQueue, offset int64)
 
 	// OffsetForTimestamp get offset of specific queue with timestamp
-	OffsetForTimestamp(queue *primitive.MessageQueue, timestamp int64) (int64, error)
+	OffsetForTimestamp(ctx context.Context, queue *primitive.MessageQueue, timestamp int64) (int64, error)
 
 	// UpdateOffset updateOffset update offset of queue in mem
-	UpdateOffset(queue *primitive.MessageQueue, offset int64) error
+	UpdateOffset(ctx context.Context, queue *primitive.MessageQueue, offset int64) error
 
 	// PersistOffset persist all offset in mem.
 	PersistOffset(ctx context.Context, topic string) error
 
-	PersistOffsetSync() error
+	PersistOffsetSync(ctx context.Context) error
 
 	// CurrentOffset return the current offset of queue in mem.
-	CurrentOffset(queue *primitive.MessageQueue) (int64, error)
+	CurrentOffset(ctx context.Context, queue *primitive.MessageQueue) (int64, error)
 }
 
-func NewPullConsumer(opts ...consumer.Option) (PullConsumer, error) {
-	return consumer.NewPullConsumer(opts...)
+func NewPullConsumer(ctx context.Context, opts ...consumer.Option) (PullConsumer, error) {
+	return consumer.NewPullConsumer(ctx, opts...)
 }

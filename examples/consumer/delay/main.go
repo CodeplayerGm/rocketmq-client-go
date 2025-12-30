@@ -30,30 +30,33 @@ import (
 
 func main() {
 	c, _ := rocketmq.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName("testGroup"),
 		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 	)
-	err := c.Subscribe("TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+	err := c.Subscribe(
+		context.Background(),
+		"TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
+			msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 
-		for _, msg := range msgs {
-			t := time.Now().UnixNano()/int64(time.Millisecond) - msg.BornTimestamp
-			fmt.Printf("Receive message[msgId=%s] %d ms later\n", msg.MsgId, t)
-		}
+			for _, msg := range msgs {
+				t := time.Now().UnixNano()/int64(time.Millisecond) - msg.BornTimestamp
+				fmt.Printf("Receive message[msgId=%s] %d ms later\n", msg.MsgId, t)
+			}
 
-		return consumer.ConsumeSuccess, nil
-	})
+			return consumer.ConsumeSuccess, nil
+		})
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	// Note: start after subscribe
-	err = c.Start()
+	err = c.Start(context.Background())
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(-1)
 	}
 	time.Sleep(time.Hour)
-	err = c.Shutdown()
+	err = c.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("Shutdown Consumer error: %s", err.Error())
 	}

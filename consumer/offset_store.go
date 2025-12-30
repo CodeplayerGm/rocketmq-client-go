@@ -54,11 +54,11 @@ func init() {
 
 //go:generate mockgen -source offset_store.go -destination mock_offset_store.go -self_package github.com/apache/rocketmq-client-go/v2/consumer  --package consumer OffsetStore
 type OffsetStore interface {
-	persist(mqs []*primitive.MessageQueue)
-	persistSync(mqs []*primitive.MessageQueue) error
-	remove(mq *primitive.MessageQueue)
-	read(mq *primitive.MessageQueue, t readType) int64
-	readWithException(mq *primitive.MessageQueue, t readType) (int64, error)
+	persist(ctx context.Context, mqs []*primitive.MessageQueue)
+	persistSync(ctx context.Context, mqs []*primitive.MessageQueue) error
+	remove(ctx context.Context, mq *primitive.MessageQueue)
+	read(ctx context.Context, mq *primitive.MessageQueue, t readType) int64
+	readWithException(ctx context.Context, mq *primitive.MessageQueue, t readType) (int64, error)
 	update(mq *primitive.MessageQueue, offset int64, increaseOnly bool)
 	getMQOffsetMap(topic string) map[primitive.MessageQueue]int64
 }
@@ -108,31 +108,31 @@ type localFileOffsetStore struct {
 	mutex sync.Mutex
 }
 
-func NewLocalFileOffsetStore(clientID, group string) OffsetStore {
+func NewLocalFileOffsetStore(ctx context.Context, clientID, group string) OffsetStore {
 	store := &localFileOffsetStore{
 		group:       group,
 		path:        filepath.Join(_LocalOffsetStorePath, clientID, group, "offset.json"),
 		OffsetTable: new(sync.Map),
 	}
-	store.load()
+	store.load(ctx)
 	return store
 }
 
-func (local *localFileOffsetStore) load() {
+func (local *localFileOffsetStore) load(ctx context.Context) {
 	local.mutex.Lock()
 	defer local.mutex.Unlock()
-	data, err := utils.FileReadAll(local.path)
+	data, err := utils.FileReadAll(ctx, local.path)
 	if os.IsNotExist(err) {
 		return
 	}
 	if err != nil {
-		rlog.Info("read from local store error, try to use bak file", map[string]interface{}{
+		rlog.Info(ctx, "read from local store error, try to use bak file", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
-		data, err = utils.FileReadAll(filepath.Join(local.path, ".bak"))
+		data, err = utils.FileReadAll(ctx, filepath.Join(local.path, ".bak"))
 	}
 	if err != nil {
-		rlog.Info("read from local store bak file error", map[string]interface{}{
+		rlog.Info(ctx, "read from local store bak file error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return
@@ -145,7 +145,7 @@ func (local *localFileOffsetStore) load() {
 
 	err = jsoniter.Unmarshal(data, &wrapper)
 	if err != nil {
-		rlog.Warning("unmarshal local offset error", map[string]interface{}{
+		rlog.Warning(ctx, "unmarshal local offset error", map[string]interface{}{
 			"local_path":             local.path,
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
@@ -160,12 +160,12 @@ func (local *localFileOffsetStore) load() {
 }
 
 // Deprecated: Use readWithException instead.
-func (local *localFileOffsetStore) read(mq *primitive.MessageQueue, t readType) int64 {
-	result, _ := local.readWithException(mq, t)
+func (local *localFileOffsetStore) read(ctx context.Context, mq *primitive.MessageQueue, t readType) int64 {
+	result, _ := local.readWithException(ctx, mq, t)
 	return result
 }
 
-func (local *localFileOffsetStore) readWithException(mq *primitive.MessageQueue, t readType) (int64, error) {
+func (local *localFileOffsetStore) readWithException(ctx context.Context, mq *primitive.MessageQueue, t readType) (int64, error) {
 	switch t {
 	case _ReadFromMemory, _ReadMemoryThenStore:
 		off := readFromMemory(local.OffsetTable, mq)
@@ -174,7 +174,7 @@ func (local *localFileOffsetStore) readWithException(mq *primitive.MessageQueue,
 		}
 		fallthrough
 	case _ReadFromStore:
-		local.load()
+		local.load(ctx)
 		return readFromMemory(local.OffsetTable, mq), nil
 	default:
 
@@ -185,10 +185,7 @@ func (local *localFileOffsetStore) readWithException(mq *primitive.MessageQueue,
 func (local *localFileOffsetStore) update(mq *primitive.MessageQueue, offset int64, increaseOnly bool) {
 	local.mutex.Lock()
 	defer local.mutex.Unlock()
-	rlog.Debug("update offset", map[string]interface{}{
-		rlog.LogKeyMessageQueue: mq,
-		"new_offset":            offset,
-	})
+
 	key := MessageQueueKey(*mq)
 	localOffset, exist := local.OffsetTable.Load(key)
 	if !exist {
@@ -204,7 +201,7 @@ func (local *localFileOffsetStore) update(mq *primitive.MessageQueue, offset int
 	}
 }
 
-func (local *localFileOffsetStore) persist(mqs []*primitive.MessageQueue) {
+func (local *localFileOffsetStore) persist(ctx context.Context, mqs []*primitive.MessageQueue) {
 	if len(mqs) == 0 {
 		return
 	}
@@ -223,10 +220,10 @@ func (local *localFileOffsetStore) persist(mqs []*primitive.MessageQueue) {
 		OffsetTable: datas,
 	}
 	data, _ := jsoniter.Marshal(wrapper)
-	utils.CheckError(fmt.Sprintf("persist offset to %s", local.path), utils.WriteToFile(local.path, data))
+	utils.CheckError(ctx, fmt.Sprintf("persist offset to %s", local.path), utils.WriteToFile(ctx, local.path, data))
 }
 
-func (local *localFileOffsetStore) persistSync(mqs []*primitive.MessageQueue) error {
+func (local *localFileOffsetStore) persistSync(ctx context.Context, mqs []*primitive.MessageQueue) error {
 	if len(mqs) == 0 {
 		return nil
 	}
@@ -246,15 +243,15 @@ func (local *localFileOffsetStore) persistSync(mqs []*primitive.MessageQueue) er
 	}
 	data, _ := jsoniter.Marshal(wrapper)
 
-	err := utils.WriteToFile(local.path, data)
+	err := utils.WriteToFile(ctx, local.path, data)
 	if err != nil {
-		utils.CheckError(fmt.Sprintf("persist offset to %s", local.path), err)
+		utils.CheckError(ctx, fmt.Sprintf("persist offset to %s", local.path), err)
 		return err
 	}
 	return nil
 }
 
-func (local *localFileOffsetStore) remove(mq *primitive.MessageQueue) {
+func (local *localFileOffsetStore) remove(_ context.Context, q *primitive.MessageQueue) {
 	// nothing to do
 }
 
@@ -287,7 +284,7 @@ func NewRemoteOffsetStore(group string, client internal.RMQClient, namesrv inter
 	}
 }
 
-func (r *remoteBrokerOffsetStore) persist(mqs []*primitive.MessageQueue) {
+func (r *remoteBrokerOffsetStore) persist(ctx context.Context, mqs []*primitive.MessageQueue) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if len(mqs) == 0 {
@@ -304,16 +301,16 @@ func (r *remoteBrokerOffsetStore) persist(mqs []*primitive.MessageQueue) {
 			delete(r.OffsetTable, mq)
 			continue
 		}
-		err := r.updateConsumeOffsetToBroker(r.group, mq, off)
+		err := r.updateConsumeOffsetToBroker(ctx, r.group, mq, off)
 		if err != nil {
-			rlog.Warning("update offset to broker error", map[string]interface{}{
+			rlog.Warning(ctx, "update offset to broker error", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: r.group,
 				rlog.LogKeyMessageQueue:  mq.String(),
 				rlog.LogKeyUnderlayError: err.Error(),
 				"offset":                 off,
 			})
 		} else {
-			rlog.Info("update offset to broker success", map[string]interface{}{
+			rlog.Info(ctx, "update offset to broker success", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: r.group,
 				rlog.LogKeyMessageQueue:  mq.String(),
 				"offset":                 off,
@@ -322,7 +319,7 @@ func (r *remoteBrokerOffsetStore) persist(mqs []*primitive.MessageQueue) {
 	}
 }
 
-func (r *remoteBrokerOffsetStore) persistSync(mqs []*primitive.MessageQueue) error {
+func (r *remoteBrokerOffsetStore) persistSync(ctx context.Context, mqs []*primitive.MessageQueue) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if len(mqs) == 0 {
@@ -340,9 +337,9 @@ func (r *remoteBrokerOffsetStore) persistSync(mqs []*primitive.MessageQueue) err
 			continue
 		}
 
-		err := r.updateConsumeOffsetToBrokerSync(r.group, mq, off)
+		err := r.updateConsumeOffsetToBrokerSync(ctx, r.group, mq, off)
 		if err != nil {
-			rlog.Warning("update offset to broker error", map[string]interface{}{
+			rlog.Warning(ctx, "update offset to broker error", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: r.group,
 				rlog.LogKeyMessageQueue:  mq.String(),
 				rlog.LogKeyUnderlayError: err.Error(),
@@ -351,7 +348,7 @@ func (r *remoteBrokerOffsetStore) persistSync(mqs []*primitive.MessageQueue) err
 			return err
 		}
 
-		rlog.Info("update offset to broker success", map[string]interface{}{
+		rlog.Info(ctx, "update offset to broker success", map[string]interface{}{
 			rlog.LogKeyConsumerGroup: r.group,
 			rlog.LogKeyMessageQueue:  mq.String(),
 			"offset":                 off,
@@ -360,24 +357,24 @@ func (r *remoteBrokerOffsetStore) persistSync(mqs []*primitive.MessageQueue) err
 	return nil
 }
 
-func (r *remoteBrokerOffsetStore) remove(mq *primitive.MessageQueue) {
+func (r *remoteBrokerOffsetStore) remove(ctx context.Context, mq *primitive.MessageQueue) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	delete(r.OffsetTable, *mq)
-	rlog.Info("delete mq from offset table", map[string]interface{}{
+	rlog.Info(ctx, "delete mq from offset table", map[string]interface{}{
 		rlog.LogKeyConsumerGroup: r.group,
 		rlog.LogKeyMessageQueue:  mq,
 	})
 }
 
 // Deprecated: Use readWithException instead.
-func (r *remoteBrokerOffsetStore) read(mq *primitive.MessageQueue, t readType) int64 {
-	result, _ := r.readWithException(mq, t)
+func (r *remoteBrokerOffsetStore) read(ctx context.Context, mq *primitive.MessageQueue, t readType) int64 {
+	result, _ := r.readWithException(ctx, mq, t)
 	return result
 }
 
-func (r *remoteBrokerOffsetStore) readWithException(mq *primitive.MessageQueue, t readType) (int64, error) {
+func (r *remoteBrokerOffsetStore) readWithException(ctx context.Context, mq *primitive.MessageQueue, t readType) (int64, error) {
 	r.mutex.RLock()
 	switch t {
 	case _ReadFromMemory, _ReadMemoryThenStore:
@@ -392,9 +389,9 @@ func (r *remoteBrokerOffsetStore) readWithException(mq *primitive.MessageQueue, 
 		}
 		fallthrough
 	case _ReadFromStore:
-		off, err := r.fetchConsumeOffsetFromBroker(r.group, mq)
+		off, err := r.fetchConsumeOffsetFromBroker(ctx, r.group, mq)
 		if err != nil {
-			rlog.Error("fetch offset of mq from broker error", map[string]interface{}{
+			rlog.Error(ctx, "fetch offset of mq from broker error", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: r.group,
 				rlog.LogKeyMessageQueue:  mq.String(),
 				rlog.LogKeyUnderlayError: err,
@@ -402,7 +399,7 @@ func (r *remoteBrokerOffsetStore) readWithException(mq *primitive.MessageQueue, 
 			r.mutex.RUnlock()
 			return -1, err
 		}
-		rlog.Info("fetch offset of mq from broker success", map[string]interface{}{
+		rlog.Info(ctx, "fetch offset of mq from broker success", map[string]interface{}{
 			rlog.LogKeyConsumerGroup: r.group,
 			rlog.LogKeyMessageQueue:  mq.String(),
 			"offset":                 off,
@@ -444,10 +441,10 @@ func (r *remoteBrokerOffsetStore) getMQOffsetMap(topic string) map[primitive.Mes
 	return copyOffsetTable
 }
 
-func (r *remoteBrokerOffsetStore) fetchConsumeOffsetFromBroker(group string, mq *primitive.MessageQueue) (int64, error) {
+func (r *remoteBrokerOffsetStore) fetchConsumeOffsetFromBroker(ctx context.Context, group string, mq *primitive.MessageQueue) (int64, error) {
 	broker := r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	if broker == "" {
-		r.namesrv.UpdateTopicRouteInfo(mq.Topic)
+		r.namesrv.UpdateTopicRouteInfo(ctx, mq.Topic)
 		broker = r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	}
 	if broker == "" {
@@ -482,10 +479,10 @@ func (r *remoteBrokerOffsetStore) fetchConsumeOffsetFromBroker(group string, mq 
 	return off, nil
 }
 
-func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBroker(group string, mq primitive.MessageQueue, off int64) error {
+func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBroker(ctx context.Context, group string, mq primitive.MessageQueue, off int64) error {
 	broker := r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	if broker == "" {
-		r.namesrv.UpdateTopicRouteInfo(mq.Topic)
+		r.namesrv.UpdateTopicRouteInfo(ctx, mq.Topic)
 		broker = r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	}
 	if broker == "" {
@@ -503,10 +500,10 @@ func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBroker(group string, mq p
 	return r.client.InvokeOneWay(context.Background(), broker, cmd, 5*time.Second)
 }
 
-func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBrokerSync(group string, mq primitive.MessageQueue, off int64) error {
+func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBrokerSync(ctx context.Context, group string, mq primitive.MessageQueue, off int64) error {
 	broker := r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	if broker == "" {
-		r.namesrv.UpdateTopicRouteInfo(mq.Topic)
+		r.namesrv.UpdateTopicRouteInfo(ctx, mq.Topic)
 		broker = r.namesrv.FindBrokerAddrByName(mq.BrokerName)
 	}
 	if broker == "" {

@@ -51,12 +51,12 @@ type defaultProducer struct {
 	ShutdownOnce sync.Once
 }
 
-func NewDefaultProducer(opts ...Option) (*defaultProducer, error) {
+func NewDefaultProducer(ctx context.Context, opts ...Option) (*defaultProducer, error) {
 	defaultOpts := defaultProducerOptions()
 	for _, apply := range opts {
 		apply(&defaultOpts)
 	}
-	srvs, err := internal.NewNamesrv(defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
+	srvs, err := internal.NewNamesrv(ctx, defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "new Namesrv failed.")
 	}
@@ -70,7 +70,7 @@ func NewDefaultProducer(opts ...Option) (*defaultProducer, error) {
 		callbackCh: make(chan interface{}),
 		options:    defaultOpts,
 	}
-	producer.client = internal.GetOrNewRocketMQClient(defaultOpts.ClientOptions, producer.callbackCh)
+	producer.client = internal.GetOrNewRocketMQClient(ctx, defaultOpts.ClientOptions, producer.callbackCh)
 	if producer.client == nil {
 		return nil, fmt.Errorf("GetOrNewRocketMQClient faild")
 	}
@@ -81,31 +81,31 @@ func NewDefaultProducer(opts ...Option) (*defaultProducer, error) {
 	return producer, nil
 }
 
-func (p *defaultProducer) Start() error {
+func (p *defaultProducer) Start(ctx context.Context) error {
 	var err error
 	p.startOnce.Do(func() {
 		err = p.client.RegisterProducer(p.group, p)
 		if err != nil {
-			rlog.Error("the producer group has been created, specify another one", map[string]interface{}{
+			rlog.Error(ctx, "the producer group has been created, specify another one", map[string]interface{}{
 				rlog.LogKeyProducerGroup: p.group,
 			})
 			err = errors2.ErrProducerCreated
 			return
 		}
-		p.client.Start()
+		p.client.Start(ctx)
 		atomic.StoreInt32(&p.state, int32(internal.StateRunning))
 	})
 	return err
 }
 
-func (p *defaultProducer) Shutdown() error {
+func (p *defaultProducer) Shutdown(ctx context.Context) error {
 	p.ShutdownOnce.Do(func() {
 		if p.options.TraceDispatcher != nil {
 			p.options.TraceDispatcher.Close()
 		}
 		atomic.StoreInt32(&p.state, int32(internal.StateShutdown))
 		p.client.UnregisterProducer(p.group)
-		p.client.Shutdown()
+		p.client.Shutdown(ctx)
 	})
 	return nil
 }
@@ -171,14 +171,14 @@ func needRetryCode(code int16) bool {
 	}
 }
 
-func (p *defaultProducer) prepareSendRequest(msg *primitive.Message, ttl time.Duration) (string, error) {
+func (p *defaultProducer) prepareSendRequest(ctx context.Context, msg *primitive.Message, ttl time.Duration) (string, error) {
 	correlationId := uuid.New().String()
 	requestClientId := p.client.ClientID()
 	msg.WithProperty(primitive.PropertyCorrelationID, correlationId)
 	msg.WithProperty(primitive.PropertyMessageReplyToClient, requestClientId)
 	msg.WithProperty(primitive.PropertyMessageTTL, strconv.Itoa(int(ttl.Seconds())))
 
-	rlog.Debug("message info:", map[string]interface{}{
+	rlog.Debug(ctx, "message info:", map[string]interface{}{
 		"clientId":      requestClientId,
 		"correlationId": correlationId,
 		"ttl":           ttl.Seconds(),
@@ -189,9 +189,9 @@ func (p *defaultProducer) prepareSendRequest(msg *primitive.Message, ttl time.Du
 		return "", errors.Wrap(err, "GetNameServ err")
 	}
 
-	if !nameSrv.CheckTopicRouteHasTopic(msg.Topic) {
-		p.tryToFindTopicPublishInfo(msg.Topic)
-		p.client.SendHeartbeatToAllBrokerWithLock()
+	if !nameSrv.CheckTopicRouteHasTopic(ctx, msg.Topic) {
+		p.tryToFindTopicPublishInfo(ctx, msg.Topic)
+		p.client.SendHeartbeatToAllBrokerWithLock(ctx)
 	}
 	return correlationId, nil
 }
@@ -203,7 +203,7 @@ func (p *defaultProducer) Request(ctx context.Context, timeout time.Duration, ms
 	}
 
 	p.messagesWithNamespace(msg)
-	correlationId, err := p.prepareSendRequest(msg, timeout)
+	correlationId, err := p.prepareSendRequest(ctx, msg, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func (p *defaultProducer) Request(ctx context.Context, timeout time.Duration, ms
 		return nil, errors.Wrap(err, "sendAsync error")
 	}
 
-	return requestResponseFuture.WaitResponseMessage(msg)
+	return requestResponseFuture.WaitResponseMessage(ctx, msg)
 }
 
 // RequestAsync  Async Send messages to consumer
@@ -243,7 +243,7 @@ func (p *defaultProducer) RequestAsync(ctx context.Context, timeout time.Duratio
 	}
 
 	p.messagesWithNamespace(msg)
-	correlationId, err := p.prepareSendRequest(msg, timeout)
+	correlationId, err := p.prepareSendRequest(ctx, msg, timeout)
 	if err != nil {
 		return err
 	}
@@ -329,14 +329,14 @@ func (p *defaultProducer) sendSync(ctx context.Context, msg *primitive.Message, 
 		if mq != nil {
 			lastBrokerName = mq.BrokerName
 		}
-		mq = p.selectMessageQueue(msg, lastBrokerName)
+		mq = p.selectMessageQueue(ctx, msg, lastBrokerName)
 		if mq == nil {
 			err = fmt.Errorf("the topic=%s route info not found", msg.Topic)
 			continue
 		}
 
 		if lastBrokerName != "" {
-			rlog.Warning("start retrying to send, ", map[string]interface{}{
+			rlog.Warning(ctx, "start retrying to send, ", map[string]interface{}{
 				"lastBroker": lastBrokerName,
 				"newBroker":  mq.BrokerName,
 			})
@@ -391,7 +391,7 @@ func (p *defaultProducer) SendAsync(ctx context.Context, f func(context.Context,
 
 func (p *defaultProducer) sendAsync(ctx context.Context, msg *primitive.Message, h func(context.Context, *primitive.SendResult, error)) error {
 
-	mq := p.selectMessageQueue(msg, "")
+	mq := p.selectMessageQueue(ctx, msg, "")
 	if mq == nil {
 		return errors.Errorf("the topic=%s route info not found", msg.Topic)
 	}
@@ -455,7 +455,7 @@ func (p *defaultProducer) sendOneWay(ctx context.Context, msg *primitive.Message
 		if mq != nil {
 			lastBrokerName = mq.BrokerName
 		}
-		mq = p.selectMessageQueue(msg, lastBrokerName)
+		mq = p.selectMessageQueue(ctx, msg, lastBrokerName)
 		if mq == nil {
 			err = fmt.Errorf("the topic=%s route info not found", msg.Topic)
 			continue
@@ -560,10 +560,10 @@ func (p *defaultProducer) buildSendRequest(mq *primitive.MessageQueue,
 	return remote.NewRemotingCommand(cmd, req, transferBody)
 }
 
-func (p *defaultProducer) tryToFindTopicPublishInfo(topic string) *internal.TopicPublishInfo {
+func (p *defaultProducer) tryToFindTopicPublishInfo(ctx context.Context, topic string) *internal.TopicPublishInfo {
 	v, exist := p.publishInfo.Load(topic)
 	if !exist {
-		data, changed, err := p.client.GetNameSrv().UpdateTopicRouteInfo(topic)
+		data, changed, err := p.client.GetNameSrv().UpdateTopicRouteInfo(ctx, topic)
 		if err != nil && primitive.IsRemotingErr(err) {
 			return nil
 		}
@@ -572,7 +572,7 @@ func (p *defaultProducer) tryToFindTopicPublishInfo(topic string) *internal.Topi
 	}
 
 	if !exist {
-		data, changed, _ := p.client.GetNameSrv().UpdateTopicRouteInfoWithDefault(topic, p.options.CreateTopicKey, p.options.DefaultTopicQueueNums)
+		data, changed, _ := p.client.GetNameSrv().UpdateTopicRouteInfoWithDefault(ctx, topic, p.options.CreateTopicKey, p.options.DefaultTopicQueueNums)
 		p.client.UpdatePublishInfo(topic, data, changed)
 		v, exist = p.publishInfo.Load(topic)
 	}
@@ -587,16 +587,16 @@ func (p *defaultProducer) tryToFindTopicPublishInfo(topic string) *internal.Topi
 	}
 
 	if len(result.MqList) <= 0 {
-		rlog.Error("can not find proper message queue", nil)
+		rlog.Error(ctx, "can not find proper message queue", nil)
 		return nil
 	}
 	return result
 }
 
-func (p *defaultProducer) selectMessageQueue(msg *primitive.Message, lastBrokerName string) *primitive.MessageQueue {
-	result := p.tryToFindTopicPublishInfo(msg.Topic)
+func (p *defaultProducer) selectMessageQueue(ctx context.Context, msg *primitive.Message, lastBrokerName string) *primitive.MessageQueue {
+	result := p.tryToFindTopicPublishInfo(ctx, msg.Topic)
 	if result == nil || len(result.MqList) == 0 {
-		rlog.Warning("topic route info is nil or empty", map[string]interface{}{
+		rlog.Warning(ctx, "topic route info is nil or empty", map[string]interface{}{
 			rlog.LogKeyTopic: msg.Topic,
 			"result":         result,
 		})
@@ -640,8 +640,8 @@ type transactionProducer struct {
 }
 
 // TODO: checkLocalTransaction
-func NewTransactionProducer(listener primitive.TransactionListener, opts ...Option) (*transactionProducer, error) {
-	producer, err := NewDefaultProducer(opts...)
+func NewTransactionProducer(ctx context.Context, listener primitive.TransactionListener, opts ...Option) (*transactionProducer, error) {
+	producer, err := NewDefaultProducer(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "NewDefaultProducer failed.")
 	}
@@ -651,18 +651,18 @@ func NewTransactionProducer(listener primitive.TransactionListener, opts ...Opti
 	}, nil
 }
 
-func (tp *transactionProducer) Start() error {
+func (tp *transactionProducer) Start(ctx context.Context) error {
 	go primitive.WithRecover(func() {
-		tp.checkTransactionState()
+		tp.checkTransactionState(ctx)
 	})
-	return tp.producer.Start()
+	return tp.producer.Start(ctx)
 }
-func (tp *transactionProducer) Shutdown() error {
-	return tp.producer.Shutdown()
+func (tp *transactionProducer) Shutdown(ctx context.Context) error {
+	return tp.producer.Shutdown(ctx)
 }
 
 // TODO: check addr
-func (tp *transactionProducer) checkTransactionState() {
+func (tp *transactionProducer) checkTransactionState(ctx context.Context) {
 	for ch := range tp.producer.callbackCh {
 		switch callback := ch.(type) {
 		case *internal.CheckTransactionStateCallback:
@@ -694,14 +694,14 @@ func (tp *transactionProducer) checkTransactionState() {
 			err := tp.producer.client.InvokeOneWay(context.Background(), callback.Addr.String(), req,
 				tp.producer.options.SendMsgTimeout)
 			if err != nil {
-				rlog.Error("send ReqENDTransaction to broker error", map[string]interface{}{
+				rlog.Error(ctx, "send ReqENDTransaction to broker error", map[string]interface{}{
 					"callback":               callback.Addr.String(),
 					"request":                req.String(),
 					rlog.LogKeyUnderlayError: err,
 				})
 			}
 		default:
-			rlog.Error(fmt.Sprintf("unknown type %v", ch), nil)
+			rlog.Error(ctx, fmt.Sprintf("unknown type %v", ch), nil)
 		}
 	}
 }
@@ -726,7 +726,7 @@ func (tp *transactionProducer) SendMessageInTransaction(ctx context.Context, msg
 		}
 		localTransactionState = tp.listener.ExecuteLocalTransaction(msg)
 		if localTransactionState != primitive.CommitMessageState {
-			rlog.Error("executeLocalTransaction but state unexpected", map[string]interface{}{
+			rlog.Error(ctx, "executeLocalTransaction but state unexpected", map[string]interface{}{
 				"localState": localTransactionState,
 				"message":    msg,
 			})

@@ -37,6 +37,7 @@ const (
 
 func TestShutdown(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -48,13 +49,13 @@ func TestShutdown(t *testing.T) {
 	p.client = client
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
-	client.EXPECT().Shutdown().Return()
+	client.EXPECT().Shutdown(gomock.Any()).Return()
 	client.EXPECT().UnregisterProducer(gomock.Any()).Return()
-	err = p.Shutdown()
+	err = p.Shutdown(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()
@@ -110,6 +111,7 @@ func mockB4Send(p *defaultProducer) {
 
 func TestSync(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -124,8 +126,8 @@ func TestSync(t *testing.T) {
 	namesrvCli.EXPECT().FindBrokerAddrByName(gomock.Any()).Return("a")
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()
@@ -168,6 +170,7 @@ func TestSync(t *testing.T) {
 
 func TestASync(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -182,8 +185,8 @@ func TestASync(t *testing.T) {
 	namesrvCli.EXPECT().FindBrokerAddrByName(gomock.Any()).Return("a")
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()
@@ -233,6 +236,7 @@ func TestASync(t *testing.T) {
 
 func TestOneway(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -247,8 +251,8 @@ func TestOneway(t *testing.T) {
 	namesrvCli.EXPECT().FindBrokerAddrByName(gomock.Any()).Return("a")
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()
@@ -273,6 +277,7 @@ func TestOneway(t *testing.T) {
 
 func TestSyncWithNamespace(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -288,8 +293,8 @@ func TestSyncWithNamespace(t *testing.T) {
 	namesrvCli.EXPECT().FindBrokerAddrByName(gomock.Any()).Return("a")
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()
@@ -333,6 +338,7 @@ func TestSyncWithNamespace(t *testing.T) {
 
 func TestBatchSendDifferentTopics(t *testing.T) {
 	p, _ := NewDefaultProducer(
+		context.Background(),
 		WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		WithRetry(2),
 		WithQueueSelector(NewManualQueueSelector()),
@@ -344,8 +350,8 @@ func TestBatchSendDifferentTopics(t *testing.T) {
 	p.client = client
 
 	client.EXPECT().RegisterProducer(gomock.Any(), gomock.Any()).Return(nil)
-	client.EXPECT().Start().Return()
-	err := p.Start()
+	client.EXPECT().Start(gomock.Any()).Return()
+	err := p.Start(context.Background())
 	assert.Nil(t, err)
 
 	ctx := context.Background()

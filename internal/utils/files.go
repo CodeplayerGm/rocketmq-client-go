@@ -18,13 +18,14 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
-func FileReadAll(path string) ([]byte, error) {
+func FileReadAll(ctx context.Context, path string) ([]byte, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -38,7 +39,7 @@ func FileReadAll(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	CheckError(fmt.Sprintf("close %s", file.Name()), file.Close())
+	CheckError(ctx, fmt.Sprintf("close %s", file.Name()), file.Close())
 	return data, nil
 }
 
@@ -56,7 +57,7 @@ func ensureDir(path string) error {
 	return nil
 }
 
-func WriteToFile(path string, data []byte) error {
+func WriteToFile(ctx context.Context, path string, data []byte) error {
 	if err := ensureDir(filepath.Dir(path)); err != nil {
 		return err
 	}
@@ -68,9 +69,9 @@ func WriteToFile(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	CheckError(fmt.Sprintf("close %s", tmpFile.Name()), tmpFile.Close())
+	CheckError(ctx, fmt.Sprintf("close %s", tmpFile.Name()), tmpFile.Close())
 
-	prevContent, err := FileReadAll(path)
+	prevContent, err := FileReadAll(ctx, path)
 	if err == nil {
 		bakFile, err := os.Create(path + ".bak")
 		if err != nil {
@@ -79,12 +80,12 @@ func WriteToFile(path string, data []byte) error {
 		if err != nil {
 			return err
 		}
-		CheckError(fmt.Sprintf("close %s", bakFile.Name()), bakFile.Close())
+		CheckError(ctx, fmt.Sprintf("close %s", bakFile.Name()), bakFile.Close())
 	}
 
 	_, err = os.Stat(path)
 	if err == nil {
-		CheckError(fmt.Sprintf("remove %s", path), os.Remove(path))
+		CheckError(ctx, fmt.Sprintf("remove %s", path), os.Remove(path))
 	}
 	return os.Rename(path+".tmp", path)
 }

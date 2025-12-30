@@ -42,7 +42,7 @@ func TestQueryTopicRouteInfoFromServer(t *testing.T) {
 		addr, err := primitive.NewNamesrvAddr("1.1.1.1:8880", "1.1.1.2:8880", "1.1.1.3:8880")
 		assert.Nil(t, err)
 
-		namesrv, err := NewNamesrv(primitive.NewPassthroughResolver(addr), nil)
+		namesrv, err := NewNamesrv(context.Background(), primitive.NewPassthroughResolver(addr), nil)
 		assert.Nil(t, err)
 		namesrv.nameSrvClient = remotingCli
 
@@ -60,7 +60,7 @@ func TestQueryTopicRouteInfoFromServer(t *testing.T) {
 					}, nil
 				}).Times(3)
 
-			data, err := namesrv.queryTopicRouteInfoFromServer("notexisted")
+			data, err := namesrv.queryTopicRouteInfoFromServer(context.Background(), "notexisted")
 			assert.Nil(t, data)
 			assert.Equal(t, errors.ErrTopicNotExist, err)
 		})
@@ -110,28 +110,28 @@ func TestFindBrokerAddressInSubscribe(t *testing.T) {
 	s.brokerAddressesMap.Store(brokerDataRaft2.BrokerName, brokerDataRaft2)
 
 	Convey("Request master broker", t, func() {
-		result := s.FindBrokerAddressInSubscribe(brokerDataRaft1.BrokerName, 0, false)
+		result := s.FindBrokerAddressInSubscribe(context.Background(), brokerDataRaft1.BrokerName, 0, false)
 		assert.NotNil(t, result)
 		assert.Equal(t, result.BrokerAddr, brokerDataRaft1.BrokerAddresses[0])
 		assert.Equal(t, result.Slave, false)
 	})
 
 	Convey("Request slave broker from normal broker group", t, func() {
-		result := s.FindBrokerAddressInSubscribe(brokerDataRaft1.BrokerName, 1, false)
+		result := s.FindBrokerAddressInSubscribe(context.Background(), brokerDataRaft1.BrokerName, 1, false)
 		assert.NotNil(t, result)
 		assert.Equal(t, result.BrokerAddr, brokerDataRaft1.BrokerAddresses[1])
 		assert.Equal(t, result.Slave, true)
 	})
 
 	Convey("Request slave broker from non normal broker group", t, func() {
-		result := s.FindBrokerAddressInSubscribe(brokerDataRaft2.BrokerName, 1, false)
+		result := s.FindBrokerAddressInSubscribe(context.Background(), brokerDataRaft2.BrokerName, 1, false)
 		assert.NotNil(t, result)
 		assert.Equal(t, result.BrokerAddr, brokerDataRaft2.BrokerAddresses[2])
 		assert.Equal(t, result.Slave, true)
 	})
 
 	Convey("Request not exist broker", t, func() {
-		result := s.FindBrokerAddressInSubscribe(brokerDataRaft1.BrokerName, 4, false)
+		result := s.FindBrokerAddressInSubscribe(context.Background(), brokerDataRaft1.BrokerName, 4, false)
 		assert.NotNil(t, result)
 	})
 }

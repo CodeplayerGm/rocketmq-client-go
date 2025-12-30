@@ -27,11 +27,12 @@ import (
 )
 
 func main() {
-	//clusterName := "DefaultCluster"
+	// clusterName := "DefaultCluster"
 	nameSrvAddr := []string{"127.0.0.1:9876"}
 	brokerAddr := "127.0.0.1:10911"
 
 	testAdmin, err := admin.NewAdmin(
+		context.Background(),
 		admin.WithResolver(primitive.NewPassthroughResolver(nameSrvAddr)),
 		admin.WithCredentials(primitive.Credentials{
 			AccessKey: "RocketMQ",
@@ -46,7 +47,7 @@ func main() {
 	}
 	fmt.Println(result.SubscriptionGroupTable)
 
-	err = testAdmin.Close()
+	err = testAdmin.Close(context.Background())
 	if err != nil {
 		fmt.Printf("Shutdown admin error: %s", err.Error())
 	}

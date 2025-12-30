@@ -30,6 +30,7 @@ import (
 
 func main() {
 	c, err := rocketmq.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName("testGroup"),
 		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		consumer.WithCredentials(primitive.Credentials{
@@ -42,22 +43,24 @@ func main() {
 		os.Exit(0)
 	}
 
-	err = c.Subscribe("test", consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
-		fmt.Printf("subscribe callback: %v \n", msgs)
-		return consumer.ConsumeSuccess, nil
-	})
+	err = c.Subscribe(
+		context.Background(),
+		"test", consumer.MessageSelector{}, func(ctx context.Context,
+			msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			fmt.Printf("subscribe callback: %v \n", msgs)
+			return consumer.ConsumeSuccess, nil
+		})
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	// Note: start after subscribe
-	err = c.Start()
+	err = c.Start(context.Background())
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(-1)
 	}
 	time.Sleep(time.Hour)
-	err = c.Shutdown()
+	err = c.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("Shutdown Consumer error: %s", err.Error())
 	}

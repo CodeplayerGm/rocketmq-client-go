@@ -28,20 +28,20 @@ import (
 )
 
 // WithTrace support rocketmq trace: https://github.com/apache/rocketmq/wiki/RIP-6-Message-Trace.
-func WithTrace(traceCfg *primitive.TraceConfig) Option {
+func WithTrace(ctx context.Context, traceCfg *primitive.TraceConfig) Option {
 	return func(options *consumerOptions) {
-		dispatcher := internal.NewTraceDispatcher(traceCfg)
+		dispatcher := internal.NewTraceDispatcher(ctx, traceCfg)
 		options.TraceDispatcher = dispatcher
 		ori := options.Interceptors
 		options.Interceptors = make([]primitive.Interceptor, 0)
-		options.Interceptors = append(options.Interceptors, newTraceInterceptor(dispatcher))
+		options.Interceptors = append(options.Interceptors, newTraceInterceptor(ctx, dispatcher))
 		options.Interceptors = append(options.Interceptors, ori...)
 	}
 }
 
-func newTraceInterceptor(dispatcher internal.TraceDispatcher) primitive.Interceptor {
+func newTraceInterceptor(ctx context.Context, dispatcher internal.TraceDispatcher) primitive.Interceptor {
 	if dispatcher != nil {
-		dispatcher.Start()
+		dispatcher.Start(ctx)
 	}
 
 	return func(ctx context.Context, req, reply interface{}, next primitive.Invoker) error {
@@ -89,7 +89,7 @@ func newTraceInterceptor(dispatcher internal.TraceDispatcher) primitive.Intercep
 		if len(beans) > 0 {
 			traceCx.TraceBeans = beans
 			traceCx.TimeStamp = time.Now().UnixNano() / int64(time.Millisecond)
-			dispatcher.Append(traceCx)
+			dispatcher.Append(ctx, traceCx)
 		}
 
 		err := next(ctx, req, reply)
@@ -107,9 +107,9 @@ func newTraceInterceptor(dispatcher internal.TraceDispatcher) primitive.Intercep
 			IsSuccess:   consumerCtx.Success,
 			CostTime:    costTime,
 			TraceBeans:  traceCx.TraceBeans,
-			ContextCode: primitive.ConsumeReturnType(ctxType).Ordinal(),
+			ContextCode: primitive.ConsumeReturnType(ctxType).Ordinal(ctx),
 		}
-		dispatcher.Append(afterCtx)
+		dispatcher.Append(ctx, afterCtx)
 		return err
 	}
 }

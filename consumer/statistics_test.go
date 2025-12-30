@@ -18,6 +18,7 @@ limitations under the License.
 package consumer
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -51,7 +52,7 @@ func TestNextHourTime(t *testing.T) {
 }
 
 func TestIncreasePullRTGetPullRT(t *testing.T) {
-	mgr := NewStatsManager()
+	mgr := NewStatsManager(context.Background())
 	mgr.ShutDownStat()
 
 	tests := []struct {
@@ -77,7 +78,7 @@ func TestIncreasePullRTGetPullRT(t *testing.T) {
 	}
 }
 
-//func TestIncreaseConsumeRTGetConsumeRT(t *testing.T) {
+// func TestIncreaseConsumeRTGetConsumeRT(t *testing.T) {
 //	ShutDownStat()
 //	tests := []struct {
 //		RT        int64
@@ -100,10 +101,10 @@ func TestIncreasePullRTGetPullRT(t *testing.T) {
 //			t.Errorf("wrong consume RT sum. want=%d, got=%d", tt.ExpectSum, snapshot.sum)
 //		}
 //	}
-//}
+// }
 
 func TestIncreasePullTPSGetPullTPS(t *testing.T) {
-	mgr := NewStatsManager()
+	mgr := NewStatsManager(context.Background())
 	mgr.ShutDownStat()
 	tests := []struct {
 		RT        int
@@ -129,7 +130,7 @@ func TestIncreasePullTPSGetPullTPS(t *testing.T) {
 }
 
 func TestIncreaseConsumeOKTPSGetConsumeOKTPS(t *testing.T) {
-	mgr := NewStatsManager()
+	mgr := NewStatsManager(context.Background())
 	mgr.ShutDownStat()
 	tests := []struct {
 		RT        int
@@ -155,7 +156,7 @@ func TestIncreaseConsumeOKTPSGetConsumeOKTPS(t *testing.T) {
 }
 
 func TestIncreaseConsumeFailedTPSGetConsumeFailedTPS(t *testing.T) {
-	mgr := NewStatsManager()
+	mgr := NewStatsManager(context.Background())
 	mgr.ShutDownStat()
 	tests := []struct {
 		RT        int
@@ -181,7 +182,7 @@ func TestIncreaseConsumeFailedTPSGetConsumeFailedTPS(t *testing.T) {
 }
 
 func TestGetConsumeStatus(t *testing.T) {
-	mgr := NewStatsManager()
+	mgr := NewStatsManager(context.Background())
 	mgr.ShutDownStat()
 	group, topic := "rocketmq", "default"
 
@@ -214,7 +215,7 @@ func TestGetConsumeStatus(t *testing.T) {
 }
 
 func TestNewStatsManager(t *testing.T) {
-	stats := NewStatsManager()
+	stats := NewStatsManager(context.Background())
 
 	st := time.Now()
 	for {

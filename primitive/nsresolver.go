@@ -28,13 +28,14 @@ import (
 	"strings"
 	"time"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 )
 
 // resolver for nameserver, monitor change of nameserver and notify client
 // consul or domain is common
 type NsResolver interface {
-	Resolve() []string
+	Resolve(ctx context.Context) []string
 	Description() string
 }
 
@@ -50,7 +51,7 @@ func NewEnvResolver() *EnvResolver {
 type EnvResolver struct {
 }
 
-func (e *EnvResolver) Resolve() []string {
+func (e *EnvResolver) Resolve(ctx context.Context) []string {
 	if v := os.Getenv("NAMESRV_ADDR"); v != "" {
 		return strings.Split(v, ";")
 	}
@@ -73,11 +74,11 @@ func NewPassthroughResolver(addr []string) *passthroughResolver {
 	}
 }
 
-func (p *passthroughResolver) Resolve() []string {
+func (p *passthroughResolver) Resolve(ctx context.Context) []string {
 	if p.addr != nil {
 		return p.addr
 	}
-	return p.failback.Resolve()
+	return p.failback.Resolve(ctx)
 }
 
 func (p *passthroughResolver) Description() string {
@@ -127,24 +128,24 @@ func (h *HttpResolver) DomainWithUnit(unitName string) {
 	}
 }
 
-func (h *HttpResolver) Resolve() []string {
-	addrs := h.get()
+func (h *HttpResolver) Resolve(ctx context.Context) []string {
+	addrs := h.get(ctx)
 	if len(addrs) > 0 {
 		return addrs
 	}
 
-	addrs = h.loadSnapshot()
+	addrs = h.loadSnapshot(ctx)
 	if len(addrs) > 0 {
 		return addrs
 	}
-	return h.failback.Resolve()
+	return h.failback.Resolve(ctx)
 }
 
 func (h *HttpResolver) Description() string {
 	return fmt.Sprintf("http resolver of domain:%v", h.domain)
 }
 
-func (h *HttpResolver) get() []string {
+func (h *HttpResolver) get(ctx context.Context) []string {
 	resp, err := h.cli.Get(h.domain)
 	if err != nil || resp == nil || resp.StatusCode != 200 {
 		data := map[string]interface{}{
@@ -154,14 +155,14 @@ func (h *HttpResolver) get() []string {
 		if resp != nil {
 			data["StatusCode"] = resp.StatusCode
 		}
-		rlog.Error("name server http fetch failed", data)
+		rlog.Error(ctx, "name server http fetch failed", data)
 		return nil
 	}
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		rlog.Error("name server read http response failed", map[string]interface{}{
+		rlog.Error(ctx, "name server read http response failed", map[string]interface{}{
 			"NameServerDomain": h.domain,
 			"err":              err,
 		})
@@ -173,33 +174,33 @@ func (h *HttpResolver) get() []string {
 		return nil
 	}
 
-	_ = h.saveSnapshot([]byte(bodyStr))
+	_ = h.saveSnapshot(ctx, []byte(bodyStr))
 
 	return strings.Split(bodyStr, ";")
 }
 
-func (h *HttpResolver) saveSnapshot(body []byte) error {
-	filePath := h.getSnapshotFilePath()
+func (h *HttpResolver) saveSnapshot(ctx context.Context, body []byte) error {
+	filePath := h.getSnapshotFilePath(ctx)
 	err := ioutil.WriteFile(filePath, body, 0644)
 	if err != nil {
-		rlog.Error("name server snapshot save failed", map[string]interface{}{
+		rlog.Error(ctx, "name server snapshot save failed", map[string]interface{}{
 			"filePath": filePath,
 			"err":      err,
 		})
 		return err
 	}
 
-	rlog.Info("name server snapshot save successfully", map[string]interface{}{
+	rlog.Info(ctx, "name server snapshot save successfully", map[string]interface{}{
 		"filePath": filePath,
 	})
 	return nil
 }
 
-func (h *HttpResolver) loadSnapshot() []string {
-	filePath := h.getSnapshotFilePath()
+func (h *HttpResolver) loadSnapshot(ctx context.Context) []string {
+	filePath := h.getSnapshotFilePath(ctx)
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
-		rlog.Warning("name server snapshot local file not exists", map[string]interface{}{
+		rlog.Warning(ctx, "name server snapshot local file not exists", map[string]interface{}{
 			"filePath": filePath,
 		})
 		return nil
@@ -210,25 +211,25 @@ func (h *HttpResolver) loadSnapshot() []string {
 		return nil
 	}
 
-	rlog.Info("load the name server snapshot local file", map[string]interface{}{
+	rlog.Info(ctx, "load the name server snapshot local file", map[string]interface{}{
 		"filePath": filePath,
 	})
 	return strings.Split(string(bs), ";")
 }
 
-func (h *HttpResolver) getSnapshotFilePath() string {
+func (h *HttpResolver) getSnapshotFilePath(ctx context.Context) string {
 	homeDir := ""
 	if usr, err := user.Current(); err == nil {
 		homeDir = usr.HomeDir
 	} else {
-		rlog.Error("name server domain, can't get user home directory", map[string]interface{}{
+		rlog.Error(ctx, "name server domain, can't get user home directory", map[string]interface{}{
 			"err": err,
 		})
 	}
 	storePath := path.Join(homeDir, "/logs/rocketmq-go/snapshot")
 	if _, err := os.Stat(storePath); os.IsNotExist(err) {
 		if err = os.MkdirAll(storePath, 0755); err != nil {
-			rlog.Fatal("can't create name server snapshot directory", map[string]interface{}{
+			rlog.Fatal(ctx, "can't create name server snapshot directory", map[string]interface{}{
 				"path": storePath,
 				"err":  err,
 			})

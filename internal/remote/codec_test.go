@@ -26,6 +26,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
+	"context"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -350,20 +351,20 @@ func TestCommandJsonIter(t *testing.T) {
 	cmd := NewRemotingCommand(192, h, []byte("Hello RocketMQCodecs"))
 	cmdData, err := json.Marshal(cmd)
 	assert.Nil(t, err)
-	rlog.Info("Command Data From Json", map[string]interface{}{
+	rlog.Info(context.Background(), "Command Data From Json", map[string]interface{}{
 		"data": *(*string)(unsafe.Pointer(&cmdData)),
 	})
 
 	data, err := jsoniter.Marshal(cmd)
 	assert.Nil(t, err)
-	rlog.Info("Command Data From Jsoniter", map[string]interface{}{
+	rlog.Info(context.Background(), "Command Data From Jsoniter", map[string]interface{}{
 		"data": *(*string)(unsafe.Pointer(&data)),
 	})
 
 	var cmdResp RemotingCommand
 	err = json.Unmarshal(cmdData, &cmdResp)
 	assert.Nil(t, err)
-	rlog.Info("Json Decode Success", map[string]interface{}{
+	rlog.Info(context.Background(), "Json Decode Success", map[string]interface{}{
 		"cmd":      cmdResp,
 		"language": cmdResp.Language,
 	})
@@ -371,7 +372,7 @@ func TestCommandJsonIter(t *testing.T) {
 	var cmdResp2 RemotingCommand
 	err = json.Unmarshal(data, &cmdResp2)
 	assert.Nil(t, err)
-	rlog.Info("Json Decode Success", map[string]interface{}{
+	rlog.Info(context.Background(), "Json Decode Success", map[string]interface{}{
 		"cmd":      cmdResp2,
 		"language": cmdResp2.Language,
 	})

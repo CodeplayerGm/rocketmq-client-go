@@ -27,6 +27,7 @@ import (
 
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 
+	"context"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -43,7 +44,7 @@ func TestEnvResolver(t *testing.T) {
 		resolver := NewEnvResolver()
 		os.Setenv("NAMESRV_ADDR", strings.Join(srvs, ";"))
 
-		addrs := resolver.Resolve()
+		addrs := resolver.Resolve(context.Background())
 
 		So(Diff(srvs, addrs), ShouldBeFalse)
 	})
@@ -67,15 +68,15 @@ func TestHttpResolverWithGet(t *testing.T) {
 
 		port := listener.Addr().(*net.TCPAddr).Port
 		nameServerDommain := fmt.Sprintf("http://127.0.0.1:%d/nameserver/addrs2", port)
-		rlog.Info("Temporary Nameserver", map[string]interface{}{
+		rlog.Info(context.Background(), "Temporary Nameserver", map[string]interface{}{
 			"domain": nameServerDommain,
 		})
 
 		resolver := NewHttpResolver("DEFAULT", nameServerDommain)
-		resolver.Resolve()
+		resolver.Resolve(context.Background())
 
 		// check snapshot saved
-		filePath := resolver.getSnapshotFilePath()
+		filePath := resolver.getSnapshotFilePath(context.Background())
 		body := strings.Join(srvs, ";")
 		bs, _ := ioutil.ReadFile(filePath)
 		So(string(bs), ShouldEqual, body)
@@ -103,16 +104,16 @@ func TestHttpResolverWithGetUnitName(t *testing.T) {
 
 		port := listener.Addr().(*net.TCPAddr).Port
 		nameServerDommain := fmt.Sprintf("http://127.0.0.1:%d/nameserver/addrs3", port)
-		rlog.Info("Temporary Nameserver", map[string]interface{}{
+		rlog.Info(context.Background(), "Temporary Nameserver", map[string]interface{}{
 			"domain": nameServerDommain,
 		})
 
 		resolver := NewHttpResolver("DEFAULT", nameServerDommain)
 		resolver.DomainWithUnit("unsh")
-		resolver.Resolve()
+		resolver.Resolve(context.Background())
 
 		// check snapshot saved
-		filePath := resolver.getSnapshotFilePath()
+		filePath := resolver.getSnapshotFilePath(context.Background())
 		body := strings.Join(srvs, ";")
 		bs, _ := ioutil.ReadFile(filePath)
 		So(string(bs), ShouldEqual, body)
@@ -133,11 +134,11 @@ func TestHttpResolverWithSnapshotFile(t *testing.T) {
 
 		os.Setenv("NAMESRV_ADDR", "") // clear env
 		// setup local snapshot file
-		filePath := resolver.getSnapshotFilePath()
+		filePath := resolver.getSnapshotFilePath(context.Background())
 		body := strings.Join(srvs, ";")
 		_ = ioutil.WriteFile(filePath, []byte(body), 0644)
 
-		addrs := resolver.Resolve()
+		addrs := resolver.Resolve(context.Background())
 
 		So(Diff(addrs, srvs), ShouldBeFalse)
 	})
@@ -157,16 +158,16 @@ func TestHttpResolverWithSnapshotFileOnce(t *testing.T) {
 
 		os.Setenv("NAMESRV_ADDR", "") // clear env
 		// setup local snapshot file
-		filePath := resolver.getSnapshotFilePath()
+		filePath := resolver.getSnapshotFilePath(context.Background())
 		body := strings.Join(srvs, ";")
 		_ = ioutil.WriteFile(filePath, []byte(body), 0644)
 		// load local snapshot file first time
-		addrs1 := resolver.Resolve()
+		addrs1 := resolver.Resolve(context.Background())
 
 		// change the local snapshot file
 		_ = ioutil.WriteFile(filePath, []byte("127.0.0.1;127.0.0.2"), 0644)
 
-		addrs2 := resolver.Resolve()
+		addrs2 := resolver.Resolve(context.Background())
 
 		So(Diff(addrs1, addrs2), ShouldBeTrue)
 		So(Diff(addrs1, srvs), ShouldBeFalse)

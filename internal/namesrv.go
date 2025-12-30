@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/internal/remote"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 )
@@ -42,27 +43,27 @@ var (
 
 //go:generate mockgen -source namesrv.go -destination mock_namesrv.go -self_package github.com/apache/rocketmq-client-go/v2/internal  --package internal Namesrvs
 type Namesrvs interface {
-	UpdateNameServerAddress()
+	UpdateNameServerAddress(ctx context.Context)
 
 	AddBroker(routeData *TopicRouteData)
 
-	cleanOfflineBroker()
+	cleanOfflineBroker(ctx context.Context)
 
-	UpdateTopicRouteInfo(topic string) (routeData *TopicRouteData, changed bool, err error)
+	UpdateTopicRouteInfo(ctx context.Context, topic string) (routeData *TopicRouteData, changed bool, err error)
 
-	UpdateTopicRouteInfoWithDefault(topic string, defaultTopic string, defaultQueueNum int) (*TopicRouteData, bool, error)
+	UpdateTopicRouteInfoWithDefault(ctx context.Context, topic string, defaultTopic string, defaultQueueNum int) (*TopicRouteData, bool, error)
 
-	FetchPublishMessageQueues(topic string) ([]*primitive.MessageQueue, error)
+	FetchPublishMessageQueues(ctx context.Context, topic string) ([]*primitive.MessageQueue, error)
 
 	FindBrokerAddrByTopic(topic string) string
 
 	FindBrokerAddrByName(brokerName string) string
 
-	FindBrokerAddressInSubscribe(brokerName string, brokerId int64, onlyThisBroker bool) *FindBrokerResult
+	FindBrokerAddressInSubscribe(ctx context.Context, brokerName string, brokerId int64, onlyThisBroker bool) *FindBrokerResult
 
-	FetchSubscribeMessageQueues(topic string) ([]*primitive.MessageQueue, error)
+	FetchSubscribeMessageQueues(ctx context.Context, topic string) ([]*primitive.MessageQueue, error)
 
-	FetchClusterList(topic string) ([]string, error)
+	FetchClusterList(ctx context.Context, topic string) ([]string, error)
 
 	AddrList() []string
 }
@@ -88,7 +89,7 @@ type namesrvs struct {
 	// lock for broker version read/write
 	brokerLock *sync.RWMutex
 
-	//subscribeInfoMap sync.Map
+	// subscribeInfoMap sync.Map
 	routeDataMap sync.Map
 
 	lockNamesrv sync.Mutex
@@ -110,8 +111,8 @@ func GetNamesrv(clientId string) (*namesrvs, error) {
 
 // NewNamesrv init Namesrv from namesrv addr string.
 // addr primitive.NamesrvAddr
-func NewNamesrv(resolver primitive.NsResolver, config *remote.RemotingClientConfig) (*namesrvs, error) {
-	addr := resolver.Resolve()
+func NewNamesrv(ctx context.Context, resolver primitive.NsResolver, config *remote.RemotingClientConfig) (*namesrvs, error) {
+	addr := resolver.Resolve(ctx)
 	if len(addr) == 0 {
 		return nil, errors.New("no name server addr found with resolver: " + resolver.Description())
 	}
@@ -165,11 +166,11 @@ func (s *namesrvs) AddrList() []string {
 
 // UpdateNameServerAddress will update srvs.
 // docs: https://rocketmq.apache.org/docs/best-practice-namesvr/
-func (s *namesrvs) UpdateNameServerAddress() {
+func (s *namesrvs) UpdateNameServerAddress(ctx context.Context) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	srvs := s.resolver.Resolve()
+	srvs := s.resolver.Resolve(ctx)
 	if len(srvs) == 0 {
 		return
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 	"testing"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -49,13 +50,13 @@ func TestAllocateByAveragely(t *testing.T) {
 		}
 
 		Convey("When params is empty", func() {
-			result := AllocateByAveragely("testGroup", "", queues, []string{"192.168.24.1@default"})
+			result := AllocateByAveragely(context.Background(), "testGroup", "", queues, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = AllocateByAveragely("testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
+			result = AllocateByAveragely(context.Background(), "testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = AllocateByAveragely("testGroup", "192.168.24.1@default", queues, nil)
+			result = AllocateByAveragely(context.Background(), "testGroup", "192.168.24.1@default", queues, nil)
 			So(result, ShouldBeNil)
 		})
 
@@ -119,16 +120,17 @@ func TestAllocateByAveragely(t *testing.T) {
 				},
 			},
 			{
-				currentCid:    "192.168.24.7@default",
-				mqAll:         queues,
-				cidAll:        []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default", "192.168.24.7@default"},
+				currentCid: "192.168.24.7@default",
+				mqAll:      queues,
+				cidAll: []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default",
+					"192.168.24.7@default"},
 				expectedQueue: []*primitive.MessageQueue{},
 			},
 		}
 
 		Convey("the result of AllocateByAveragely should be deep equal expectedQueue", func() {
 			for _, value := range cases {
-				result := AllocateByAveragely("testGroup", value.currentCid, value.mqAll, value.cidAll)
+				result := AllocateByAveragely(context.Background(), "testGroup", value.currentCid, value.mqAll, value.cidAll)
 				So(result, ShouldResemble, value.expectedQueue)
 			}
 		})
@@ -159,13 +161,13 @@ func TestAllocateByAveragelyCircle(t *testing.T) {
 		}
 
 		Convey("When params is empty", func() {
-			result := AllocateByAveragelyCircle("testGroup", "", queues, []string{"192.168.24.1@default"})
+			result := AllocateByAveragelyCircle(context.Background(), "testGroup", "", queues, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = AllocateByAveragelyCircle("testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
+			result = AllocateByAveragelyCircle(context.Background(), "testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = AllocateByAveragelyCircle("testGroup", "192.168.24.1@default", queues, nil)
+			result = AllocateByAveragelyCircle(context.Background(), "testGroup", "192.168.24.1@default", queues, nil)
 			So(result, ShouldBeNil)
 		})
 
@@ -229,16 +231,17 @@ func TestAllocateByAveragelyCircle(t *testing.T) {
 				},
 			},
 			{
-				currentCid:    "192.168.24.7@default",
-				mqAll:         queues,
-				cidAll:        []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default", "192.168.24.7@default"},
+				currentCid: "192.168.24.7@default",
+				mqAll:      queues,
+				cidAll: []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default",
+					"192.168.24.7@default"},
 				expectedQueue: []*primitive.MessageQueue{},
 			},
 		}
 
 		Convey("the result of AllocateByAveragelyCircle should be deep equal expectedQueue", func() {
 			for _, value := range cases {
-				result := AllocateByAveragelyCircle("testGroup", value.currentCid, value.mqAll, value.cidAll)
+				result := AllocateByAveragelyCircle(context.Background(), "testGroup", value.currentCid, value.mqAll, value.cidAll)
 				So(result, ShouldResemble, value.expectedQueue)
 			}
 		})
@@ -268,8 +271,8 @@ func TestAllocateByConfig(t *testing.T) {
 			},
 		}
 
-		strategy := AllocateByConfig(queues)
-		result := strategy("testGroup", "192.168.24.1@default", queues, []string{"192.168.24.1@default", "192.168.24.2@default"})
+		strategy := AllocateByConfig(context.Background(), queues)
+		result := strategy(context.Background(), "testGroup", "192.168.24.1@default", queues, []string{"192.168.24.1@default", "192.168.24.2@default"})
 		So(result, ShouldResemble, queues)
 	})
 }
@@ -277,7 +280,7 @@ func TestAllocateByConfig(t *testing.T) {
 func TestAllocateByMachineRoom(t *testing.T) {
 	Convey("Given some consumer IDCs with a starting value", t, func() {
 		idcs := []string{"192.168.24.1", "192.168.24.2"}
-		strategy := AllocateByMachineRoom(idcs)
+		strategy := AllocateByMachineRoom(context.Background(), idcs)
 
 		queues := []*primitive.MessageQueue{
 			{
@@ -307,13 +310,13 @@ func TestAllocateByMachineRoom(t *testing.T) {
 		}
 
 		Convey("When params is empty", func() {
-			result := strategy("testGroup", "", queues, []string{"192.168.24.1@default"})
+			result := strategy(context.Background(), "testGroup", "", queues, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = strategy("testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
+			result = strategy(context.Background(), "testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = strategy("testGroup", "192.168.24.1@default", queues, nil)
+			result = strategy(context.Background(), "testGroup", "192.168.24.1@default", queues, nil)
 			So(result, ShouldBeNil)
 		})
 
@@ -381,16 +384,17 @@ func TestAllocateByMachineRoom(t *testing.T) {
 				},
 			},
 			{
-				currentCid:    "192.168.24.7@default",
-				mqAll:         queues,
-				cidAll:        []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default", "192.168.24.7@default"},
+				currentCid: "192.168.24.7@default",
+				mqAll:      queues,
+				cidAll: []string{"192.168.24.1@default", "192.168.24.2@default", "192.168.24.3@default", "192.168.24.4@default", "192.168.24.5@default", "192.168.24.6@default",
+					"192.168.24.7@default"},
 				expectedQueue: []*primitive.MessageQueue{},
 			},
 		}
 
 		Convey("the result of AllocateByMachineRoom should be deep equal expectedQueue", func() {
 			for _, value := range cases {
-				result := strategy("testGroup", value.currentCid, value.mqAll, value.cidAll)
+				result := strategy(context.Background(), "testGroup", value.currentCid, value.mqAll, value.cidAll)
 				So(result, ShouldResemble, value.expectedQueue)
 			}
 		})
@@ -400,7 +404,7 @@ func TestAllocateByMachineRoom(t *testing.T) {
 func TestAllocateByConsistentHash(t *testing.T) {
 	Convey("Given virtualNodeCnt with a starting value", t, func() {
 		virtualNodeCnt := 10
-		strategy := AllocateByConsistentHash(virtualNodeCnt)
+		strategy := AllocateByConsistentHash(context.Background(), virtualNodeCnt)
 
 		queues := []*primitive.MessageQueue{
 			{
@@ -430,13 +434,13 @@ func TestAllocateByConsistentHash(t *testing.T) {
 		}
 
 		Convey("When params is empty", func() {
-			result := strategy("testGroup", "", queues, []string{"192.168.24.1@default"})
+			result := strategy(context.Background(), "testGroup", "", queues, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = strategy("testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
+			result = strategy(context.Background(), "testGroup", "192.168.24.1@default", nil, []string{"192.168.24.1@default"})
 			So(result, ShouldBeNil)
 
-			result = strategy("testGroup", "192.168.24.1@default", queues, nil)
+			result = strategy(context.Background(), "testGroup", "192.168.24.1@default", queues, nil)
 			So(result, ShouldBeNil)
 		})
 
@@ -475,8 +479,8 @@ func TestAllocateByConsistentHash(t *testing.T) {
 
 		Convey("observe the result of AllocateByMachineRoom", func() {
 			for _, value := range cases {
-				result := strategy("testGroup", value.currentCid, value.mqAll, value.cidAll)
-				rlog.Info("Result Of AllocateByMachineRoom", map[string]interface{}{
+				result := strategy(context.Background(), "testGroup", value.currentCid, value.mqAll, value.cidAll)
+				rlog.Info(context.Background(), "Result Of AllocateByMachineRoom", map[string]interface{}{
 					"currentCid":     value.currentCid,
 					"cidAll":         value.cidAll,
 					"allocateResult": result,

@@ -28,6 +28,7 @@ import (
 	gods_util "github.com/emirpasic/gods/utils"
 	"go.uber.org/atomic"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/internal"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
@@ -234,7 +235,7 @@ func (pq *processQueue) isPullExpired() bool {
 	return time.Now().Sub(pq.LastPullTime()) > _PullMaxIdleTime
 }
 
-func (pq *processQueue) cleanExpiredMsg(pc *pushConsumer) {
+func (pq *processQueue) cleanExpiredMsg(ctx context.Context, pc *pushConsumer) {
 	if pc.option.ConsumeOrderly {
 		return
 	}
@@ -255,7 +256,7 @@ func (pq *processQueue) cleanExpiredMsg(pc *pushConsumer) {
 		if startTime != "" {
 			st, err := strconv.ParseInt(startTime, 10, 64)
 			if err != nil {
-				rlog.Warning("parse message start consume time error", map[string]interface{}{
+				rlog.Warning(ctx, "parse message start consume time error", map[string]interface{}{
 					"time":                   startTime,
 					rlog.LogKeyUnderlayError: err,
 				})
@@ -266,7 +267,7 @@ func (pq *processQueue) cleanExpiredMsg(pc *pushConsumer) {
 				pq.mutex.RUnlock()
 				return
 			}
-			rlog.Info("send expire msg back. ", map[string]interface{}{
+			rlog.Info(ctx, "send expire msg back. ", map[string]interface{}{
 				rlog.LogKeyTopic:       msg.Topic,
 				rlog.LogKeyMessageId:   msg.MsgId,
 				"startTime":            startTime,
@@ -275,8 +276,8 @@ func (pq *processQueue) cleanExpiredMsg(pc *pushConsumer) {
 				rlog.LogKeyQueueOffset: msg.QueueOffset,
 			})
 			pq.mutex.RUnlock()
-			if !pc.sendMessageBack(msg.Queue.BrokerName, msg, int(3+msg.ReconsumeTimes)) {
-				rlog.Error("send message back to broker error when clean expired messages", map[string]interface{}{
+			if !pc.sendMessageBack(ctx, msg.Queue.BrokerName, msg, int(3+msg.ReconsumeTimes)) {
+				rlog.Error(ctx, "send message back to broker error when clean expired messages", map[string]interface{}{
 					rlog.LogKeyConsumerGroup: pc.consumerGroup,
 				})
 				continue

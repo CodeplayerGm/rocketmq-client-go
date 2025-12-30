@@ -36,6 +36,7 @@ func mockB4Start(c *pushConsumer) {
 func TestStart(t *testing.T) {
 	Convey("test Start method", t, func() {
 		c, _ := NewPushConsumer(
+			context.Background(),
 			WithGroupName("testGroup"),
 			WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 			WithConsumerModel(BroadCasting),
@@ -47,9 +48,9 @@ func TestStart(t *testing.T) {
 		client := internal.NewMockRMQClient(ctrl)
 		c.client = client
 
-		err := c.Subscribe("TopicTest", MessageSelector{}, func(ctx context.Context,
+		err := c.Subscribe(context.Background(), "TopicTest", MessageSelector{}, func(ctx context.Context,
 			msgs ...*primitive.MessageExt) (ConsumeResult, error) {
-			rlog.Info("Subscribe Callback", map[string]interface{}{
+			rlog.Info(ctx, "Subscribe Callback", map[string]interface{}{
 				"msgs": msgs,
 			})
 			return ConsumeSuccess, nil
@@ -58,14 +59,14 @@ func TestStart(t *testing.T) {
 		_, exists := c.subscriptionDataTable.Load("TopicTest")
 		So(exists, ShouldBeTrue)
 
-		err = c.Unsubscribe("TopicTest")
+		err = c.Unsubscribe(context.Background(), "TopicTest")
 		So(err, ShouldBeNil)
 		_, exists = c.subscriptionDataTable.Load("TopicTest")
 		So(exists, ShouldBeFalse)
 
-		err = c.Subscribe("TopicTest", MessageSelector{}, func(ctx context.Context,
+		err = c.Subscribe(context.Background(), "TopicTest", MessageSelector{}, func(ctx context.Context,
 			msgs ...*primitive.MessageExt) (ConsumeResult, error) {
-			rlog.Info("Subscribe Callback", map[string]interface{}{
+			rlog.Info(ctx, "Subscribe Callback", map[string]interface{}{
 				"msgs": msgs,
 			})
 			return ConsumeSuccess, nil
@@ -75,23 +76,23 @@ func TestStart(t *testing.T) {
 		So(exists, ShouldBeTrue)
 
 		client.EXPECT().ClientID().Return("127.0.0.1@DEFAULT")
-		client.EXPECT().Start().Return()
+		client.EXPECT().Start(gomock.Any()).Return()
 		client.EXPECT().RegisterConsumer(gomock.Any(), gomock.Any()).Return(nil)
-		client.EXPECT().UpdateTopicRouteInfo().AnyTimes().Return()
+		client.EXPECT().UpdateTopicRouteInfo(gomock.Any()).AnyTimes().Return()
 
 		Convey("test topic route info not found", func() {
-			client.EXPECT().Shutdown().Return()
+			client.EXPECT().Shutdown(gomock.Any()).Return()
 			client.EXPECT().UnregisterConsumer(gomock.Any()).Return()
-			err = c.Start()
+			err = c.Start(context.Background())
 			So(err.Error(), ShouldContainSubstring, "route info not found")
 		})
 
 		Convey("test topic route info found", func() {
-			client.EXPECT().RebalanceImmediately().Return()
+			client.EXPECT().RebalanceImmediately(gomock.Any()).Return()
 			client.EXPECT().CheckClientInBroker().Return()
-			client.EXPECT().SendHeartbeatToAllBrokerWithLock().Return()
+			client.EXPECT().SendHeartbeatToAllBrokerWithLock(gomock.Any()).Return()
 			mockB4Start(c)
-			err = c.Start()
+			err = c.Start(context.Background())
 			So(err, ShouldBeNil)
 		})
 	})

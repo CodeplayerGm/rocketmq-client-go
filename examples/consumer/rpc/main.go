@@ -36,6 +36,7 @@ const (
 func main() {
 	// create a producer to send reply message
 	replyProducer, err := producer.NewDefaultProducer(
+		context.Background(),
 		producer.WithGroupName(producerGroup),
 		producer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 	)
@@ -43,7 +44,7 @@ func main() {
 		fmt.Printf("error: %s\n", err)
 		return
 	}
-	err = replyProducer.Start()
+	err = replyProducer.Start(context.Background())
 	if err != nil {
 		fmt.Printf("error: %s\n", err)
 		return
@@ -51,13 +52,14 @@ func main() {
 
 	// create consumer
 	c, err := consumer.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName(consumerGroup),
 		consumer.WithConsumeFromWhere(consumer.ConsumeFromLastOffset),
 		consumer.WithPullInterval(0),
 		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 	)
 
-	err = c.Subscribe(topic, consumer.MessageSelector{
+	err = c.Subscribe(context.Background(), topic, consumer.MessageSelector{
 		Type: consumer.TAG, Expression: "*"}, func(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 
 		fmt.Printf("subscribe callback: %v \n", msgs)
@@ -90,7 +92,7 @@ func main() {
 		fmt.Printf("error: %s\n", err)
 		return
 	}
-	err = c.Start()
+	err = c.Start(context.Background())
 	if err != nil {
 		fmt.Printf("error: %s\n", err)
 		return
@@ -98,7 +100,7 @@ func main() {
 	fmt.Printf("Consumer Started.\n")
 
 	time.Sleep(time.Hour)
-	err = c.Shutdown()
+	err = c.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("shutdown Consumer error: %s", err.Error())
 	}

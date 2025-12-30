@@ -52,6 +52,7 @@ func main() {
 		log.Fatalf("NewNamesrvAddr err: %v", err)
 	}
 	pullConsumer, err = rocketmq.NewPullConsumer(
+		context.Background(),
 		consumer.WithGroupName(consumerGroupName),
 		consumer.WithNameServer(nameSrv),
 		consumer.WithCredentials(primitive.Credentials{
@@ -68,11 +69,11 @@ func main() {
 		Type:       consumer.TAG,
 		Expression: tag,
 	}
-	err = pullConsumer.Subscribe(topic, selector)
+	err = pullConsumer.Subscribe(context.Background(), topic, selector)
 	if err != nil {
 		log.Fatalf("fail to Subscribe: %v", err)
 	}
-	err = pullConsumer.Start()
+	err = pullConsumer.Start(context.Background())
 	if err != nil {
 		log.Fatalf("fail to Start: %v", err)
 	}
@@ -116,11 +117,11 @@ func pull() {
 		for _, msg := range resp.GetMessageExts() {
 			// todo LOGIC CODE HERE
 			queue = msg.Queue
-			//log.Println(msg.Queue, msg.QueueOffset, msg.GetKeys(), msg.MsgId, string(msg.Body))
+			// log.Println(msg.Queue, msg.QueueOffset, msg.GetKeys(), msg.MsgId, string(msg.Body))
 			log.Println(msg)
 		}
 		// update offset
-		err = pullConsumer.UpdateOffset(queue, resp.NextBeginOffset)
+		err = pullConsumer.UpdateOffset(context.Background(), queue, resp.NextBeginOffset)
 		if err != nil {
 			log.Printf("[pullConsumer.UpdateOffset] err=%v", err)
 		}

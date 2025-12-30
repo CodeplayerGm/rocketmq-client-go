@@ -54,6 +54,7 @@ func main() {
 		log.Fatalf("NewNamesrvAddr err: %v", err)
 	}
 	pullConsumer, err := rocketmq.NewPullConsumer(
+		ctx,
 		consumer.WithGroupName(consumerGroupName),
 		consumer.WithNameServer(nameSrv),
 		consumer.WithCredentials(primitive.Credentials{
@@ -70,17 +71,18 @@ func main() {
 		Type:       consumer.TAG,
 		Expression: tag,
 	}
-	err = pullConsumer.Subscribe(topic, selector)
+	err = pullConsumer.Subscribe(ctx, topic, selector)
 	if err != nil {
 		log.Fatalf("Subscribe error: %s\n", err)
 	}
-	err = pullConsumer.Start()
+	err = pullConsumer.Start(ctx)
 	if err != nil {
 		log.Fatalf("fail to new pullConsumer: %v", err)
 	}
 
 	nameSrvAddr := []string{nameSrvAddr}
 	mqAdmin, err := admin.NewAdmin(
+		ctx,
 		admin.WithResolver(primitive.NewPassthroughResolver(nameSrvAddr)),
 		admin.WithCredentials(primitive.Credentials{
 			AccessKey: accessKey,
@@ -122,7 +124,7 @@ func main() {
 						// save offset to redis
 						err = ackOffset(client, consumerGroupName, topic, queue.QueueId, resp.NextBeginOffset)
 						if err != nil {
-							//todo ack error logic
+							// todo ack error logic
 						}
 
 						// set offset for next pull
@@ -169,7 +171,7 @@ func getOffset(redisCli *redis.Client, consumerGroupName string, topic string, q
 		return 0
 	} else if err != nil {
 		log.Printf("get redis error, key:%s, %v\n", key, err)
-		//todo Your own logic. like get from db.
+		// todo Your own logic. like get from db.
 		return 0
 	} else {
 		return offset

@@ -39,10 +39,10 @@ type Admin interface {
 
 	GetAllSubscriptionGroup(ctx context.Context, brokerAddr string, timeoutMillis time.Duration) (*SubscriptionGroupWrapper, error)
 	FetchAllTopicList(ctx context.Context) (*TopicList, error)
-	//GetBrokerClusterInfo(ctx context.Context) (*remote.RemotingCommand, error)
+	// GetBrokerClusterInfo(ctx context.Context) (*remote.RemotingCommand, error)
 	FetchPublishMessageQueues(ctx context.Context, topic string) ([]*primitive.MessageQueue, error)
-	FetchClusterList(topic string) ([]string, error)
-	Close() error
+	FetchClusterList(ctx context.Context, topic string) ([]string, error)
+	Close(ctx context.Context) error
 }
 
 // TODO: move outdated context to ctx
@@ -108,12 +108,12 @@ type admin struct {
 }
 
 // NewAdmin initialize admin
-func NewAdmin(opts ...AdminOption) (*admin, error) {
+func NewAdmin(ctx context.Context, opts ...AdminOption) (*admin, error) {
 	defaultOpts := defaultAdminOptions()
 	for _, opt := range opts {
 		opt(defaultOpts)
 	}
-	namesrv, err := internal.NewNamesrv(defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
+	namesrv, err := internal.NewNamesrv(ctx, defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
 	defaultOpts.Namesrv = namesrv
 	if err != nil {
 		return nil, err
@@ -122,12 +122,12 @@ func NewAdmin(opts ...AdminOption) (*admin, error) {
 		namesrv.SetCredentials(defaultOpts.Credentials)
 	}
 
-	cli := internal.GetOrNewRocketMQClient(defaultOpts.ClientOptions, nil)
+	cli := internal.GetOrNewRocketMQClient(ctx, defaultOpts.ClientOptions, nil)
 	if cli == nil {
 		return nil, fmt.Errorf("GetOrNewRocketMQClient faild")
 	}
 	defaultOpts.Namesrv = cli.GetNameSrv()
-	//log.Printf("Client: %#v", namesrv.srvs)
+	// log.Printf("Client: %#v", namesrv.srvs)
 	return &admin{
 		cli:  cli,
 		opts: defaultOpts,
@@ -139,17 +139,17 @@ func (a *admin) GetAllSubscriptionGroup(ctx context.Context, brokerAddr string, 
 	a.cli.RegisterACL()
 	response, err := a.cli.InvokeSync(ctx, brokerAddr, cmd, timeoutMillis)
 	if err != nil {
-		rlog.Error("Get all group list error", map[string]interface{}{
+		rlog.Error(ctx, "Get all group list error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil, err
 	} else {
-		rlog.Info("Get all group list success", map[string]interface{}{})
+		rlog.Info(ctx, "Get all group list success", map[string]interface{}{})
 	}
 	var subscriptionGroupWrapper SubscriptionGroupWrapper
 	_, err = subscriptionGroupWrapper.Decode(response.Body, &subscriptionGroupWrapper)
 	if err != nil {
-		rlog.Error("Get all group list decode error", map[string]interface{}{
+		rlog.Error(ctx, "Get all group list decode error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil, err
@@ -161,17 +161,17 @@ func (a *admin) FetchAllTopicList(ctx context.Context) (*TopicList, error) {
 	cmd := remote.NewRemotingCommand(internal.ReqGetAllTopicListFromNameServer, nil, nil)
 	response, err := a.cli.InvokeSync(ctx, a.cli.GetNameSrv().AddrList()[0], cmd, 3*time.Second)
 	if err != nil {
-		rlog.Error("Fetch all topic list error", map[string]interface{}{
+		rlog.Error(ctx, "Fetch all topic list error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil, err
 	} else {
-		rlog.Info("Fetch all topic list success", map[string]interface{}{})
+		rlog.Info(ctx, "Fetch all topic list success", map[string]interface{}{})
 	}
 	var topicList TopicList
 	_, err = topicList.Decode(response.Body, &topicList)
 	if err != nil {
-		rlog.Error("Fetch all topic list decode error", map[string]interface{}{
+		rlog.Error(ctx, "Fetch all topic list decode error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil, err
@@ -201,13 +201,13 @@ func (a *admin) CreateTopic(ctx context.Context, opts ...OptionCreate) error {
 	cmd := remote.NewRemotingCommand(internal.ReqCreateTopic, request, nil)
 	_, err := a.cli.InvokeSync(ctx, cfg.BrokerAddr, cmd, 5*time.Second)
 	if err != nil {
-		rlog.Error("create topic error", map[string]interface{}{
+		rlog.Error(ctx, "create topic error", map[string]interface{}{
 			rlog.LogKeyTopic:         cfg.Topic,
 			rlog.LogKeyBroker:        cfg.BrokerAddr,
 			rlog.LogKeyUnderlayError: err,
 		})
 	} else {
-		rlog.Info("create topic success", map[string]interface{}{
+		rlog.Info(ctx, "create topic success", map[string]interface{}{
 			rlog.LogKeyTopic:  cfg.Topic,
 			rlog.LogKeyBroker: cfg.BrokerAddr,
 		})
@@ -241,14 +241,14 @@ func (a *admin) DeleteTopic(ctx context.Context, opts ...OptionDelete) error {
 	for _, apply := range opts {
 		apply(&cfg)
 	}
-	//delete topic in broker
+	// delete topic in broker
 	if cfg.BrokerAddr == "" {
-		a.cli.GetNameSrv().UpdateTopicRouteInfo(cfg.Topic)
+		a.cli.GetNameSrv().UpdateTopicRouteInfo(ctx, cfg.Topic)
 		cfg.BrokerAddr = a.cli.GetNameSrv().FindBrokerAddrByTopic(cfg.Topic)
 	}
 
 	if _, err := a.deleteTopicInBroker(ctx, cfg.Topic, cfg.BrokerAddr); err != nil {
-		rlog.Error("delete topic in broker error", map[string]interface{}{
+		rlog.Error(ctx, "delete topic in broker error", map[string]interface{}{
 			rlog.LogKeyTopic:         cfg.Topic,
 			rlog.LogKeyBroker:        cfg.BrokerAddr,
 			rlog.LogKeyUnderlayError: err,
@@ -256,13 +256,13 @@ func (a *admin) DeleteTopic(ctx context.Context, opts ...OptionDelete) error {
 		return err
 	}
 
-	//delete topic in nameserver
+	// delete topic in nameserver
 	if len(cfg.NameSrvAddr) == 0 {
-		a.cli.GetNameSrv().UpdateTopicRouteInfo(cfg.Topic)
+		a.cli.GetNameSrv().UpdateTopicRouteInfo(ctx, cfg.Topic)
 		cfg.NameSrvAddr = a.cli.GetNameSrv().AddrList()
-		_, _, err := a.cli.GetNameSrv().UpdateTopicRouteInfo(cfg.Topic)
+		_, _, err := a.cli.GetNameSrv().UpdateTopicRouteInfo(ctx, cfg.Topic)
 		if err != nil {
-			rlog.Error("delete topic in nameserver error", map[string]interface{}{
+			rlog.Error(ctx, "delete topic in nameserver error", map[string]interface{}{
 				rlog.LogKeyTopic:         cfg.Topic,
 				rlog.LogKeyUnderlayError: err,
 			})
@@ -272,7 +272,7 @@ func (a *admin) DeleteTopic(ctx context.Context, opts ...OptionDelete) error {
 
 	for _, nameSrvAddr := range cfg.NameSrvAddr {
 		if _, err := a.deleteTopicInNameServer(ctx, cfg.Topic, nameSrvAddr); err != nil {
-			rlog.Error("delete topic in nameserver error", map[string]interface{}{
+			rlog.Error(ctx, "delete topic in nameserver error", map[string]interface{}{
 				"nameServer":             nameSrvAddr,
 				rlog.LogKeyTopic:         cfg.Topic,
 				rlog.LogKeyUnderlayError: err,
@@ -280,7 +280,7 @@ func (a *admin) DeleteTopic(ctx context.Context, opts ...OptionDelete) error {
 			return err
 		}
 	}
-	rlog.Info("delete topic success", map[string]interface{}{
+	rlog.Info(ctx, "delete topic success", map[string]interface{}{
 		"nameServer":      cfg.NameSrvAddr,
 		rlog.LogKeyTopic:  cfg.Topic,
 		rlog.LogKeyBroker: cfg.BrokerAddr,
@@ -289,16 +289,16 @@ func (a *admin) DeleteTopic(ctx context.Context, opts ...OptionDelete) error {
 }
 
 func (a *admin) FetchPublishMessageQueues(ctx context.Context, topic string) ([]*primitive.MessageQueue, error) {
-	return a.cli.GetNameSrv().FetchPublishMessageQueues(utils.WrapNamespace(a.opts.Namespace, topic))
+	return a.cli.GetNameSrv().FetchPublishMessageQueues(ctx, utils.WrapNamespace(a.opts.Namespace, topic))
 }
 
-func (a *admin) FetchClusterList(topic string) ([]string, error) {
-	return a.cli.GetNameSrv().FetchClusterList(topic)
+func (a *admin) FetchClusterList(ctx context.Context, topic string) ([]string, error) {
+	return a.cli.GetNameSrv().FetchClusterList(ctx, topic)
 }
 
-func (a *admin) Close() error {
+func (a *admin) Close(ctx context.Context) error {
 	a.closeOnce.Do(func() {
-		a.cli.Shutdown()
+		a.cli.Shutdown(ctx)
 	})
 	return nil
 }

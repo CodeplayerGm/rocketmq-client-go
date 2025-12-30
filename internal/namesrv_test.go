@@ -29,6 +29,7 @@ import (
 
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 
+	"context"
 	. "github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 )
@@ -36,7 +37,7 @@ import (
 // TestSelector test roundrobin selector in namesrv
 func TestSelector(t *testing.T) {
 	srvs := []string{"127.0.0.1:9876", "127.0.0.1:9879", "12.24.123.243:10911", "12.24.123.243:10915"}
-	namesrv, err := NewNamesrv(primitive.NewPassthroughResolver(srvs), nil)
+	namesrv, err := NewNamesrv(context.Background(), primitive.NewPassthroughResolver(srvs), nil)
 	assert.Nil(t, err)
 
 	assert.Equal(t, srvs[0], namesrv.getNameServerAddress())
@@ -92,7 +93,7 @@ func TestUpdateNameServerAddress(t *testing.T) {
 
 		port := listener.Addr().(*net.TCPAddr).Port
 		nameServerDommain := fmt.Sprintf("http://127.0.0.1:%d/nameserver/addrs", port)
-		rlog.Info("Temporary Nameserver", map[string]interface{}{
+		rlog.Info(context.Background(), "Temporary Nameserver", map[string]interface{}{
 			"domain": nameServerDommain,
 		})
 
@@ -103,7 +104,7 @@ func TestUpdateNameServerAddress(t *testing.T) {
 			resolver: resolver,
 		}
 
-		ns.UpdateNameServerAddress()
+		ns.UpdateNameServerAddress(context.Background())
 
 		index1 := ns.index
 		IP1 := ns.getNameServerAddress()
@@ -134,7 +135,7 @@ func TestUpdateNameServerAddressUseEnv(t *testing.T) {
 			resolver: resolver,
 		}
 		os.Setenv("NAMESRV_ADDR", strings.Join(srvs, ";"))
-		ns.UpdateNameServerAddress()
+		ns.UpdateNameServerAddress(context.Background())
 
 		index1 := ns.index
 		IP1 := ns.getNameServerAddress()

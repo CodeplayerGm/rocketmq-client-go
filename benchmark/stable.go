@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"github.com/apache/rocketmq-client-go/v2/errors"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
@@ -84,11 +85,11 @@ func (st *stableTest) run() {
 		select {
 		case <-signalChan:
 			opTicker.Stop()
-			rlog.Info("Test Done", nil)
+			rlog.Info(context.Background(), "Test Done", nil)
 			return
 		case <-closeChan:
 			opTicker.Stop()
-			rlog.Info("Test Done", nil)
+			rlog.Info(context.Background(), "Test Done", nil)
 			return
 		case <-opTicker.C:
 			st.op()
@@ -100,7 +101,7 @@ type stableTestProducer struct {
 	*stableTest
 	bodySize int
 
-	//p rocketmq.Producer
+	// p rocketmq.Producer
 }
 
 func (stp *stableTestProducer) buildFlags(name string) {
@@ -127,7 +128,7 @@ func (stp *stableTestProducer) usage() {
 func (stp *stableTestProducer) run(args []string) {
 	err := stp.flags.Parse(args)
 	if err != nil {
-		rlog.Info("Parse Args Error", map[string]interface{}{
+		rlog.Info(context.Background(), "Parse Args Error", map[string]interface{}{
 			"args":                   args,
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
@@ -137,46 +138,46 @@ func (stp *stableTestProducer) run(args []string) {
 
 	err = stp.checkFlag()
 	if err != nil {
-		rlog.Error("Check Flag Error", map[string]interface{}{
+		rlog.Error(context.Background(), "Check Flag Error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
 		stp.usage()
 		return
 	}
 
-	//p, err := rocketmq.NewProducer(&rocketmq.ProducerConfig{
+	// p, err := rocketmq.NewProducer(&rocketmq.ProducerConfig{
 	//	ClientConfig: rocketmq.ClientConfig{GroupID: stp.groupID, NameServer: stp.nameSrv},
-	//})
-	//if err != nil {
+	// })
+	// if err != nil {
 	//	fmt.Printf("new consumer error:%s\n", err)
 	//	return
-	//}
+	// }
 	//
-	//err = p.Start()
-	//if err != nil {
+	// err = p.Start()
+	// if err != nil {
 	//	fmt.Printf("start consumer error:%s\n", err)
 	//	return
-	//}
-	//defer p.Shutdown()
+	// }
+	// defer p.Shutdown()
 	//
-	//stp.p = p
+	// stp.p = p
 	stp.stableTest.run()
 }
 
 func (stp *stableTestProducer) sendMessage() {
-	//r, err := stp.p.SendMessageSync(&rocketmq.Message{Topic: stp.topic, Body: buildMsg(stp.bodySize)})
-	//if err == nil {
+	// r, err := stp.p.SendMessageSync(&rocketmq.Message{Topic: stp.topic, Body: buildMsg(stp.bodySize)})
+	// if err == nil {
 	//	fmt.Printf("send result:%+v\n", r)
 	//	return
-	//}
-	//fmt.Printf("send message error:%s", err)
+	// }
+	// fmt.Printf("send message error:%s", err)
 }
 
 type stableTestConsumer struct {
 	*stableTest
 	expression string
 
-	//c       rocketmq.PullConsumer
+	// c       rocketmq.PullConsumer
 	offsets map[int]int64
 }
 
@@ -204,7 +205,7 @@ func (stc *stableTestConsumer) usage() {
 func (stc *stableTestConsumer) run(args []string) {
 	err := stc.flags.Parse(args)
 	if err != nil {
-		rlog.Error("Parse Args Error", map[string]interface{}{
+		rlog.Error(context.Background(), "Parse Args Error", map[string]interface{}{
 			"args":                   args,
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
@@ -214,53 +215,53 @@ func (stc *stableTestConsumer) run(args []string) {
 
 	err = stc.checkFlag()
 	if err != nil {
-		rlog.Error("Check Flag Error", map[string]interface{}{
+		rlog.Error(context.Background(), "Check Flag Error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
 		stc.usage()
 		return
 	}
 	//
-	//c, err := rocketmq.NewPullConsumer(&rocketmq.PullConsumerConfig{
+	// c, err := rocketmq.NewPullConsumer(&rocketmq.PullConsumerConfig{
 	//	ClientConfig: rocketmq.ClientConfig{GroupID: stc.groupID, NameServer: stc.nameSrv},
-	//})
-	//if err != nil {
+	// })
+	// if err != nil {
 	//	fmt.Printf("new pull consumer error:%s\n", err)
 	//	return
-	//}
+	// }
 	//
-	//err = c.Start()
-	//if err != nil {
+	// err = c.Start()
+	// if err != nil {
 	//	fmt.Printf("start consumer error:%s\n", err)
 	//	return
-	//}
-	//defer c.Shutdown()
+	// }
+	// defer c.Shutdown()
 	//
-	//stc.c = c
+	// stc.c = c
 	stc.stableTest.run()
 }
 
 func (stc *stableTestConsumer) pullMessage() {
-	//mqs := stc.c.FetchSubscriptionMessageQueues(stc.topic)
+	// mqs := stc.c.FetchSubscriptionMessageQueues(stc.topic)
 	//
-	//for _, mq := range mqs {
+	// for _, mq := range mqs {
 	//	offset := stc.offsets[mq.ID]
 	//	pr := stc.c.Pull(mq, stc.expression, offset, 32)
-	//fmt.Printf("pull from %s, offset:%d, count:%+v\n", mq.String(), offset, len(pr.Messages))
+	// fmt.Printf("pull from %s, offset:%d, count:%+v\n", mq.String(), offset, len(pr.Messages))
 	//
-	//switch pr.Status {
-	//case rocketmq.PullNoNewMsg:
+	// switch pr.Status {
+	// case rocketmq.PullNoNewMsg:
 	//	stc.offsets[mq.ID] = 0 // pull from the begin
-	//case rocketmq.PullFound:
+	// case rocketmq.PullFound:
 	//	fallthrough
-	//case rocketmq.PullNoMatchedMsg:
+	// case rocketmq.PullNoMatchedMsg:
 	//	fallthrough
-	//case rocketmq.PullOffsetIllegal:
+	// case rocketmq.PullOffsetIllegal:
 	//	stc.offsets[mq.ID] = pr.NextBeginOffset
-	//case rocketmq.PullBrokerTimeout:
+	// case rocketmq.PullBrokerTimeout:
 	//	fmt.Println("broker timeout occur")
-	//}
-	//}
+	// }
+	// }
 }
 
 func init() {

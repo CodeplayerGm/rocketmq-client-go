@@ -33,7 +33,7 @@ type CommunicationMode string
 
 type ConsumeReturnType string
 
-func (c ConsumeReturnType) Ordinal() int {
+func (c ConsumeReturnType) Ordinal(ctx context.Context) int {
 	switch c {
 	case SuccessReturn:
 		return 0
@@ -46,7 +46,7 @@ func (c ConsumeReturnType) Ordinal() int {
 	case FailedReturn:
 		return 4
 	default:
-		rlog.Error("Illegal Consumer Return Type", map[string]interface{}{
+		rlog.Error(ctx, "Illegal Consumer Return Type", map[string]interface{}{
 			"type": c,
 		})
 		return 0

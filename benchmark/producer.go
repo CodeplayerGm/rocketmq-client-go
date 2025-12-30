@@ -91,7 +91,7 @@ func (s *produceSnapshots) printStati() {
 	maxRT := atomic.LoadInt64(&s.cur.sendMessageMaxRT)
 	s.RUnlock()
 
-	rlog.Info("Benchmark Producer Snapshot", map[string]interface{}{
+	rlog.Info(context.Background(), "Benchmark Producer Snapshot", map[string]interface{}{
 		"sendTps":        int64(sendTps),
 		"maxRt":          maxRT,
 		"averageRt":      avgRT,
@@ -129,20 +129,21 @@ func init() {
 
 func (bp *producerBenchmark) produceMsg(stati *statiBenchmarkProducerSnapshot, exit chan struct{}) {
 	p, err := rocketmq.NewProducer(
+		context.Background(),
 		producer.WithNameServer([]string{bp.nameSrv}),
 		producer.WithRetry(2),
 	)
 
 	if err != nil {
-		rlog.Error("New Producer Error", map[string]interface{}{
+		rlog.Error(context.Background(), "New Producer Error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
 		return
 	}
 
-	err = p.Start()
+	err = p.Start(context.Background())
 
-	defer p.Shutdown()
+	defer p.Shutdown(context.Background())
 
 	topic, tag := bp.topic, "benchmark-producer"
 	msgStr := buildMsg(bp.bodySize)
@@ -158,7 +159,7 @@ AGAIN:
 	r, err := p.SendSync(context.Background(), primitive.NewMessage(topic, []byte(msgStr)))
 
 	if err != nil {
-		rlog.Error("Send Message Error", map[string]interface{}{
+		rlog.Error(context.Background(), "Send Message Error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
 		goto AGAIN
@@ -178,7 +179,7 @@ AGAIN:
 		}
 		goto AGAIN
 	}
-	rlog.Error("Send Message Error", map[string]interface{}{
+	rlog.Error(context.Background(), "Send Message Error", map[string]interface{}{
 		"topic":                  topic,
 		"tag":                    tag,
 		rlog.LogKeyUnderlayError: err.Error(),
@@ -190,34 +191,34 @@ func (bp *producerBenchmark) run(args []string) {
 	bp.flags.Parse(args)
 
 	if bp.topic == "" {
-		rlog.Error("Empty Topic", nil)
+		rlog.Error(context.Background(), "Empty Topic", nil)
 		bp.flags.Usage()
 		return
 	}
 
 	if bp.groupID == "" {
-		rlog.Error("Empty Group Id", nil)
+		rlog.Error(context.Background(), "Empty Group Id", nil)
 		bp.flags.Usage()
 		return
 	}
 
 	if bp.nameSrv == "" {
-		rlog.Error("Empty Nameserver", nil)
+		rlog.Error(context.Background(), "Empty Nameserver", nil)
 		bp.flags.Usage()
 		return
 	}
 	if bp.instanceCount <= 0 {
-		rlog.Error("Instance Count Must Be Positive Integer", nil)
+		rlog.Error(context.Background(), "Instance Count Must Be Positive Integer", nil)
 		bp.flags.Usage()
 		return
 	}
 	if bp.testMinutes <= 0 {
-		rlog.Error("Test Time Must Be Positive Integer", nil)
+		rlog.Error(context.Background(), "Test Time Must Be Positive Integer", nil)
 		bp.flags.Usage()
 		return
 	}
 	if bp.bodySize <= 0 {
-		rlog.Error("Body Size Must Be Positive Integer", nil)
+		rlog.Error(context.Background(), "Body Size Must Be Positive Integer", nil)
 		bp.flags.Usage()
 		return
 	}
@@ -232,7 +233,7 @@ func (bp *producerBenchmark) run(args []string) {
 		go func() {
 			wg.Add(1)
 			bp.produceMsg(&stati, exitChan)
-			rlog.Info("Producer Done and Exit", map[string]interface{}{
+			rlog.Info(context.Background(), "Producer Done and Exit", map[string]interface{}{
 				"id": i,
 			})
 			wg.Done()
@@ -282,7 +283,7 @@ func (bp *producerBenchmark) run(args []string) {
 	wg.Wait()
 	snapshots.takeSnapshot()
 	snapshots.printStati()
-	rlog.Info("Test Done", nil)
+	rlog.Info(context.Background(), "Test Done", nil)
 }
 
 func (bp *producerBenchmark) usage() {

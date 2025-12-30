@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/internal/utils"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
@@ -135,15 +136,15 @@ func NewHeartbeatData(clientID string) *heartbeatData {
 	}
 }
 
-func (data *heartbeatData) encode() []byte {
+func (data *heartbeatData) encode(ctx context.Context) []byte {
 	d, err := jsoniter.Marshal(data)
 	if err != nil {
-		rlog.Error("marshal heartbeatData error", map[string]interface{}{
+		rlog.Error(ctx, "marshal heartbeatData error", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil
 	}
-	rlog.Debug("heartbeat: "+string(d), nil)
+	rlog.Debug(ctx, "heartbeat: "+string(d), nil)
 	return d
 }
 
@@ -388,30 +389,30 @@ type ResetOffsetBody struct {
 
 // Decode note: the origin implementation for parse json is in gson format.
 // this func should support both gson and fastjson schema.
-func (resetOffsetBody *ResetOffsetBody) Decode(body []byte) {
+func (resetOffsetBody *ResetOffsetBody) Decode(ctx context.Context, body []byte) {
 	validJSON := gjson.ValidBytes(body)
 
 	var offsetTable map[primitive.MessageQueue]int64
 
 	if validJSON {
-		offsetTable = parseGsonFormat(body)
+		offsetTable = parseGsonFormat(ctx, body)
 	} else {
-		offsetTable = parseFastJsonFormat(body)
+		offsetTable = parseFastJsonFormat(ctx, body)
 	}
 
 	resetOffsetBody.OffsetTable = offsetTable
 }
 
-func parseGsonFormat(body []byte) map[primitive.MessageQueue]int64 {
+func parseGsonFormat(ctx context.Context, body []byte) map[primitive.MessageQueue]int64 {
 	result := gjson.ParseBytes(body)
 
-	rlog.Debug("offset table string "+result.Get("offsetTable").String(), nil)
+	rlog.Debug(ctx, "offset table string "+result.Get("offsetTable").String(), nil)
 
 	offsetTable := make(map[primitive.MessageQueue]int64, 0)
 
 	offsetStr := result.Get("offsetTable").String()
 	if len(offsetStr) <= 2 {
-		rlog.Warning("parse reset offset table json get nothing in body", map[string]interface{}{
+		rlog.Warning(ctx, "parse reset offset table json get nothing in body", map[string]interface{}{
 			"origin json": offsetStr,
 		})
 		return offsetTable
@@ -430,7 +431,7 @@ func parseGsonFormat(body []byte) map[primitive.MessageQueue]int64 {
 		}
 		offset, err := strconv.ParseInt(vstr, 10, 64)
 		if err != nil {
-			rlog.Error("Unmarshal offset error", map[string]interface{}{
+			rlog.Error(ctx, "Unmarshal offset error", map[string]interface{}{
 				rlog.LogKeyUnderlayError: err,
 			})
 			return nil
@@ -444,7 +445,7 @@ func parseGsonFormat(body []byte) map[primitive.MessageQueue]int64 {
 		kObj := new(primitive.MessageQueue)
 		err = jsoniter.Unmarshal([]byte(kstr), &kObj)
 		if err != nil {
-			rlog.Error("Unmarshal message queue error", map[string]interface{}{
+			rlog.Error(ctx, "Unmarshal message queue error", map[string]interface{}{
 				rlog.LogKeyUnderlayError: err,
 			})
 			return nil
@@ -455,14 +456,14 @@ func parseGsonFormat(body []byte) map[primitive.MessageQueue]int64 {
 	return offsetTable
 }
 
-func parseFastJsonFormat(body []byte) map[primitive.MessageQueue]int64 {
+func parseFastJsonFormat(ctx context.Context, body []byte) map[primitive.MessageQueue]int64 {
 	offsetTable := make(map[primitive.MessageQueue]int64)
 
 	jsonStr := string(body)
 	offsetStr := gjson.Get(jsonStr, "offsetTable").String()
 
 	if len(offsetStr) <= 2 {
-		rlog.Warning("parse reset offset table json get nothing in body", map[string]interface{}{
+		rlog.Warning(ctx, "parse reset offset table json get nothing in body", map[string]interface{}{
 			"origin json": jsonStr,
 		})
 		return offsetTable
@@ -485,7 +486,7 @@ func parseFastJsonFormat(body []byte) map[primitive.MessageQueue]int64 {
 		err = json.Unmarshal([]byte(queueStr), &queue)
 
 		if err != nil {
-			rlog.Error("parse reset offset table json get nothing in body", map[string]interface{}{
+			rlog.Error(ctx, "parse reset offset table json get nothing in body", map[string]interface{}{
 				"origin json": jsonStr,
 			})
 		}

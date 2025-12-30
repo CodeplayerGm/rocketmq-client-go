@@ -215,8 +215,8 @@ const (
 type TraceDispatcher interface {
 	GetTraceTopicName() string
 
-	Start()
-	Append(ctx TraceContext) bool
+	Start(ctx context.Context)
+	Append(c context.Context, ctx TraceContext) bool
 	Close()
 }
 
@@ -241,8 +241,7 @@ type traceDispatcher struct {
 	cli     RMQClient
 }
 
-func NewTraceDispatcher(traceCfg *primitive.TraceConfig) *traceDispatcher {
-	ctx := context.Background()
+func NewTraceDispatcher(ctx context.Context, traceCfg *primitive.TraceConfig) *traceDispatcher {
 	ctx, cancel := context.WithCancel(ctx)
 
 	t := traceCfg.TraceTopic
@@ -261,9 +260,9 @@ func NewTraceDispatcher(traceCfg *primitive.TraceConfig) *traceDispatcher {
 	var srvs *namesrvs
 	var err error
 	if len(traceCfg.NamesrvAddrs) > 0 {
-		srvs, err = NewNamesrv(primitive.NewPassthroughResolver(traceCfg.NamesrvAddrs), nil)
+		srvs, err = NewNamesrv(ctx, primitive.NewPassthroughResolver(traceCfg.NamesrvAddrs), nil)
 	} else {
-		srvs, err = NewNamesrv(traceCfg.Resolver, nil)
+		srvs, err = NewNamesrv(ctx, traceCfg.Resolver, nil)
 	}
 
 	if err != nil {
@@ -280,7 +279,7 @@ func NewTraceDispatcher(traceCfg *primitive.TraceConfig) *traceDispatcher {
 	cliOp.RetryTimes = 0
 	cliOp.Namesrv = srvs
 	cliOp.Credentials = traceCfg.Credentials
-	cli := GetOrNewRocketMQClient(cliOp, nil)
+	cli := GetOrNewRocketMQClient(ctx, cliOp, nil)
 	if cli == nil {
 		return nil
 	}
@@ -302,14 +301,14 @@ func (td *traceDispatcher) GetTraceTopicName() string {
 	return td.traceTopic
 }
 
-func (td *traceDispatcher) Start() {
+func (td *traceDispatcher) Start(ctx context.Context) {
 	td.running = true
-	td.cli.Start()
+	td.cli.Start(ctx)
 	maxWaitDuration := 5 * time.Millisecond
 	td.ticker = time.NewTicker(maxWaitDuration)
 	maxWaitTime := maxWaitDuration.Nanoseconds()
 	go primitive.WithRecover(func() {
-		td.process(maxWaitTime)
+		td.process(ctx, maxWaitTime)
 	})
 }
 
@@ -319,16 +318,16 @@ func (td *traceDispatcher) Close() {
 	td.cancel()
 }
 
-func (td *traceDispatcher) Append(ctx TraceContext) bool {
+func (td *traceDispatcher) Append(c context.Context, ctx TraceContext) bool {
 	if !td.running {
-		rlog.Error("traceDispatcher is closed.", nil)
+		rlog.Error(c, "traceDispatcher is closed.", nil)
 		return false
 	}
 	select {
 	case td.input <- ctx:
 		return true
 	default:
-		rlog.Warning("buffer full", map[string]interface{}{
+		rlog.Warning(c, "buffer full", map[string]interface{}{
 			"discardCount": atomic.AddInt64(&td.discardCount, 1),
 			"TraceContext": ctx,
 		})
@@ -337,7 +336,7 @@ func (td *traceDispatcher) Append(ctx TraceContext) bool {
 }
 
 // process
-func (td *traceDispatcher) process(maxWaitTime int64) {
+func (td *traceDispatcher) process(c context.Context, maxWaitTime int64) {
 	var count int
 	var batch []TraceContext
 	lastput := time.Now()
@@ -351,7 +350,7 @@ func (td *traceDispatcher) process(maxWaitTime int64) {
 				count = 0
 				batchSend := batch
 				go primitive.WithRecover(func() {
-					td.batchCommit(batchSend)
+					td.batchCommit(c, batchSend)
 				})
 				batch = make([]TraceContext, 0)
 			}
@@ -363,7 +362,7 @@ func (td *traceDispatcher) process(maxWaitTime int64) {
 					count = 0
 					batchSend := batch
 					go primitive.WithRecover(func() {
-						td.batchCommit(batchSend)
+						td.batchCommit(c, batchSend)
 					})
 					batch = make([]TraceContext, 0)
 				}
@@ -371,7 +370,7 @@ func (td *traceDispatcher) process(maxWaitTime int64) {
 		case <-td.ctx.Done():
 			batchSend := batch
 			go primitive.WithRecover(func() {
-				td.batchCommit(batchSend)
+				td.batchCommit(c, batchSend)
 			})
 			batch = make([]TraceContext, 0)
 
@@ -381,7 +380,7 @@ func (td *traceDispatcher) process(maxWaitTime int64) {
 				now = time.Now().UnixNano() / int64(time.Millisecond)
 				runtime.Gosched()
 			}
-			rlog.Info(fmt.Sprintf("------end trace send %v %v", td.input, td.batchCh), nil)
+			rlog.Info(c, fmt.Sprintf("------end trace send %v %v", td.input, td.batchCh), nil)
 			return
 		}
 	}
@@ -389,7 +388,7 @@ func (td *traceDispatcher) process(maxWaitTime int64) {
 
 // batchCommit commit slice of TraceContext. convert the ctxs to keyed pair(key is Topic + regionid).
 // flush according key one by one.
-func (td *traceDispatcher) batchCommit(ctxs []TraceContext) {
+func (td *traceDispatcher) batchCommit(ctx context.Context, ctxs []TraceContext) {
 	keyedCtxs := make(map[string][]TraceTransferBean)
 	for _, ctx := range ctxs {
 		if len(ctx.TraceBeans) == 0 {
@@ -412,7 +411,7 @@ func (td *traceDispatcher) batchCommit(ctxs []TraceContext) {
 			topic = arr[0]
 			regionID = arr[1]
 		}
-		td.flush(topic, regionID, v)
+		td.flush(ctx, topic, regionID, v)
 	}
 }
 
@@ -427,7 +426,7 @@ func (ks Keyset) slice() []string {
 }
 
 // flush data in batch.
-func (td *traceDispatcher) flush(topic, regionID string, data []TraceTransferBean) {
+func (td *traceDispatcher) flush(ctx context.Context, topic, regionID string, data []TraceTransferBean) {
 	if len(data) == 0 {
 		return
 	}
@@ -443,18 +442,18 @@ func (td *traceDispatcher) flush(topic, regionID string, data []TraceTransferBea
 		flushed = false
 
 		if builder.Len() > maxMsgSize {
-			td.sendTraceDataByMQ(keyset, regionID, builder.String())
+			td.sendTraceDataByMQ(ctx, keyset, regionID, builder.String())
 			builder.Reset()
 			keyset = make(Keyset)
 			flushed = true
 		}
 	}
 	if !flushed {
-		td.sendTraceDataByMQ(keyset, regionID, builder.String())
+		td.sendTraceDataByMQ(ctx, keyset, regionID, builder.String())
 	}
 }
 
-func (td *traceDispatcher) sendTraceDataByMQ(keySet Keyset, regionID string, data string) {
+func (td *traceDispatcher) sendTraceDataByMQ(ctx context.Context, keySet Keyset, regionID string, data string) {
 	traceTopic := td.traceTopic
 	if td.access == primitive.Cloud {
 		traceTopic = td.traceTopic + regionID
@@ -462,7 +461,7 @@ func (td *traceDispatcher) sendTraceDataByMQ(keySet Keyset, regionID string, dat
 	msg := primitive.NewMessage(traceTopic, []byte(data))
 	msg.WithKeys(keySet.slice())
 
-	mq, addr := td.findMq(regionID)
+	mq, addr := td.findMq(ctx, regionID)
 	if mq == nil {
 		return
 	}
@@ -473,12 +472,12 @@ func (td *traceDispatcher) sendTraceDataByMQ(keySet Keyset, regionID string, dat
 		cancel()
 		resp := primitive.NewSendResult()
 		if e != nil {
-			rlog.Info("send trace data error.", map[string]interface{}{
+			rlog.Info(ctx, "send trace data error.", map[string]interface{}{
 				"traceData": data,
 			})
 		} else {
 			td.cli.ProcessSendResponse(mq.BrokerName, command, resp, msg)
-			rlog.Debug("send trace data success:", map[string]interface{}{
+			rlog.Debug(ctx, "send trace data success:", map[string]interface{}{
 				"SendResult": resp,
 				"traceData":  data,
 			})
@@ -486,26 +485,26 @@ func (td *traceDispatcher) sendTraceDataByMQ(keySet Keyset, regionID string, dat
 	})
 	if err != nil {
 		cancel()
-		rlog.Info("send trace data error when invoke", map[string]interface{}{
+		rlog.Info(ctx, "send trace data error when invoke", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 	}
 }
 
-func (td *traceDispatcher) findMq(regionID string) (*primitive.MessageQueue, string) {
+func (td *traceDispatcher) findMq(ctx context.Context, regionID string) (*primitive.MessageQueue, string) {
 	traceTopic := td.traceTopic
 	if td.access == primitive.Cloud {
 		traceTopic = td.traceTopic + regionID
 	}
-	mqs, err := td.namesrvs.FetchPublishMessageQueues(traceTopic)
+	mqs, err := td.namesrvs.FetchPublishMessageQueues(ctx, traceTopic)
 	if err != nil {
-		rlog.Error("fetch publish message queues failed", map[string]interface{}{
+		rlog.Error(ctx, "fetch publish message queues failed", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 		return nil, ""
 	}
 	if len(mqs) == 0 {
-		rlog.Warning("could not fetch any publish message queue", map[string]interface{}{
+		rlog.Warning(ctx, "could not fetch any publish message queue", map[string]interface{}{
 			"topic": traceTopic,
 		})
 		return nil, ""

@@ -51,6 +51,7 @@ func main() {
 		log.Fatalf("NewNamesrvAddr err: %v", err)
 	}
 	pullConsumer, err = rocketmq.NewPullConsumer(
+		context.Background(),
 		consumer.WithGroupName(consumerGroupName),
 		consumer.WithNameServer(nameSrv),
 		consumer.WithNamespace(namespace),
@@ -61,30 +62,30 @@ func main() {
 	}
 
 	// assign nil firstly to help consumer start up
-	err = pullConsumer.Assign(topic, nil)
+	err = pullConsumer.Assign(context.Background(), topic, nil)
 	if err != nil {
 		log.Fatalf("fail to Assign: %v", err)
 	}
-	err = pullConsumer.Start()
+	err = pullConsumer.Start(context.Background())
 	if err != nil {
 		log.Fatalf("fail to Start: %v", err)
 	}
 
-	mqs, err := pullConsumer.GetTopicRouteInfo(topic)
+	mqs, err := pullConsumer.GetTopicRouteInfo(context.Background(), topic)
 	if err != nil {
 		log.Fatalf("fail to GetTopicRouteInfo: %v", err)
 	}
 
 	for _, mq := range mqs {
-		offset, err := pullConsumer.OffsetForTimestamp(mq, time.Now().UnixMilli()-60*10)
+		offset, err := pullConsumer.OffsetForTimestamp(context.Background(), mq, time.Now().UnixMilli()-60*10)
 		if err != nil {
 			log.Fatalf("fail to get offset for timestamp: %v", err)
 		} else {
-			pullConsumer.SeekOffset(mq, offset)
+			pullConsumer.SeekOffset(context.Background(), mq, offset)
 		}
 	}
 
-	err = pullConsumer.Assign(topic, mqs)
+	err = pullConsumer.Assign(context.Background(), topic, mqs)
 	if err != nil {
 		log.Fatalf("fail to Assign: %v", err)
 	}

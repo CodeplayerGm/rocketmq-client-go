@@ -36,10 +36,12 @@ func main() {
 	}
 
 	p, _ := rocketmq.NewProducer(
+		context.Background(),
+		producer.WithGroupName("testGroup"),
 		producer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		producer.WithRetry(2),
-		producer.WithTrace(traceCfg))
-	err := p.Start()
+		producer.WithTrace(context.Background(), traceCfg))
+	err := p.Start(context.Background())
 	if err != nil {
 		fmt.Printf("start producer error: %s", err.Error())
 		os.Exit(1)
@@ -57,7 +59,7 @@ func main() {
 
 	time.Sleep(10 * time.Second)
 
-	err = p.Shutdown()
+	err = p.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("shutdown producer error: %s", err.Error())
 	}

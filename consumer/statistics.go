@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 )
@@ -38,13 +39,13 @@ type StatsManager struct {
 	topicAndGroupPullRT           *statsItemSet
 }
 
-func NewStatsManager() *StatsManager {
+func NewStatsManager(ctx context.Context) *StatsManager {
 	mgr := &StatsManager{}
-	mgr.topicAndGroupConsumeOKTPS = newStatsItemSet("CONSUME_OK_TPS")
-	mgr.topicAndGroupConsumeRT = newStatsItemSet("CONSUME_RT")
-	mgr.topicAndGroupConsumeFailedTPS = newStatsItemSet("CONSUME_FAILED_TPS")
-	mgr.topicAndGroupPullTPS = newStatsItemSet("PULL_TPS")
-	mgr.topicAndGroupPullRT = newStatsItemSet("PULL_RT")
+	mgr.topicAndGroupConsumeOKTPS = newStatsItemSet(ctx, "CONSUME_OK_TPS")
+	mgr.topicAndGroupConsumeRT = newStatsItemSet(ctx, "CONSUME_RT")
+	mgr.topicAndGroupConsumeFailedTPS = newStatsItemSet(ctx, "CONSUME_FAILED_TPS")
+	mgr.topicAndGroupPullTPS = newStatsItemSet(ctx, "PULL_TPS")
+	mgr.topicAndGroupPullRT = newStatsItemSet(ctx, "PULL_RT")
 	return mgr
 }
 
@@ -161,16 +162,16 @@ type statsItemSet struct {
 	closed         chan struct{}
 }
 
-func newStatsItemSet(statsName string) *statsItemSet {
+func newStatsItemSet(ctx context.Context, statsName string) *statsItemSet {
 	sis := &statsItemSet{
 		statsName: statsName,
 		closed:    make(chan struct{}),
 	}
-	sis.init()
+	sis.init(ctx)
 	return sis
 }
 
-func (sis *statsItemSet) init() {
+func (sis *statsItemSet) init(ctx context.Context) {
 	go primitive.WithRecover(func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
@@ -219,7 +220,7 @@ func (sis *statsItemSet) init() {
 			case <-sis.closed:
 				return
 			case <-ticker.C:
-				sis.printAtMinutes()
+				sis.printAtMinutes(ctx)
 			}
 		}
 	})
@@ -233,7 +234,7 @@ func (sis *statsItemSet) init() {
 			case <-sis.closed:
 				return
 			case <-ticker.C:
-				sis.printAtHour()
+				sis.printAtHour(ctx)
 			}
 		}
 	})
@@ -247,7 +248,7 @@ func (sis *statsItemSet) init() {
 			case <-sis.closed:
 				return
 			case <-ticker.C:
-				sis.printAtDay()
+				sis.printAtDay(ctx)
 			}
 		}
 	})
@@ -277,26 +278,26 @@ func (sis *statsItemSet) samplingInHour() {
 	})
 }
 
-func (sis *statsItemSet) printAtMinutes() {
+func (sis *statsItemSet) printAtMinutes(ctx context.Context) {
 	sis.statsItemTable.Range(func(key, value interface{}) bool {
 		si := value.(*statsItem)
-		si.printAtMinutes()
+		si.printAtMinutes(ctx)
 		return true
 	})
 }
 
-func (sis *statsItemSet) printAtHour() {
+func (sis *statsItemSet) printAtHour(ctx context.Context) {
 	sis.statsItemTable.Range(func(key, value interface{}) bool {
 		si := value.(*statsItem)
-		si.printAtHour()
+		si.printAtHour(ctx)
 		return true
 	})
 }
 
-func (sis *statsItemSet) printAtDay() {
+func (sis *statsItemSet) printAtDay(ctx context.Context) {
 	sis.statsItemTable.Range(func(key, value interface{}) bool {
 		si := value.(*statsItem)
-		si.printAtDay()
+		si.printAtDay(ctx)
 		return true
 	})
 }
@@ -420,9 +421,9 @@ func (si *statsItem) samplingInHour() {
 	}
 }
 
-func (si *statsItem) printAtMinutes() {
+func (si *statsItem) printAtMinutes(ctx context.Context) {
 	ss := computeStatsData(&si.csListMinuteLock, si.csListMinute)
-	rlog.Info("Stats In One Minute.", map[string]interface{}{
+	rlog.Info(ctx, "Stats In One Minute.", map[string]interface{}{
 		"statsName": si.statsName,
 		"statsKey":  si.statsKey,
 		"SUM":       ss.sum,
@@ -431,9 +432,9 @@ func (si *statsItem) printAtMinutes() {
 	})
 }
 
-func (si *statsItem) printAtHour() {
+func (si *statsItem) printAtHour(ctx context.Context) {
 	ss := computeStatsData(&si.csListHourLock, si.csListHour)
-	rlog.Info("Stats In One Hour.", map[string]interface{}{
+	rlog.Info(ctx, "Stats In One Hour.", map[string]interface{}{
 		"statsName": si.statsName,
 		"statsKey":  si.statsKey,
 		"SUM":       ss.sum,
@@ -442,9 +443,9 @@ func (si *statsItem) printAtHour() {
 	})
 }
 
-func (si *statsItem) printAtDay() {
+func (si *statsItem) printAtDay(ctx context.Context) {
 	ss := computeStatsData(&si.csListDayLock, si.csListDay)
-	rlog.Info("Stats In One Day.", map[string]interface{}{
+	rlog.Info(ctx, "Stats In One Day.", map[string]interface{}{
 		"statsName": si.statsName,
 		"statsKey":  si.statsKey,
 		"SUM":       ss.sum,

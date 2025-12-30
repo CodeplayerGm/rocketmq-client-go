@@ -36,6 +36,7 @@ func main() {
 	flag.Parse()
 
 	p, err := rocketmq.NewProducer(
+		context.Background(),
 		producer.WithNsResolver(primitive.NewPassthroughResolver([]string{endpoint})),
 		producer.WithRetry(2),
 	)
@@ -43,7 +44,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	err = p.Start()
+	err = p.Start(context.Background())
 	if err != nil {
 		fmt.Printf("start producer error: %s", err.Error())
 		os.Exit(1)
@@ -68,7 +69,7 @@ func main() {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	err = p.Shutdown()
+	err = p.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("shutdown producer error: %s", err.Error())
 	}

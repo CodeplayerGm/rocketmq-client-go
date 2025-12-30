@@ -118,7 +118,7 @@ func TestCreateScanner(t *testing.T) {
 	}
 	client := NewRemotingClient(nil)
 	reader := bytes.NewReader(content)
-	scanner := client.createScanner(reader)
+	scanner := client.createScanner(context.Background(), reader)
 	for scanner.Scan() {
 		rcr, err := decode(scanner.Bytes())
 		if err != nil {
@@ -186,7 +186,7 @@ func TestInvokeSync(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		scanner := client.createScanner(conn)
+		scanner := client.createScanner(context.Background(), conn)
 		for scanner.Scan() {
 			receivedRemotingCommand, err := decode(scanner.Bytes())
 			if err != nil {
@@ -248,7 +248,7 @@ func TestInvokeAsync(t *testing.T) {
 			t.Fatalf("failed to create connection. %s", err)
 		}
 		defer conn.Close()
-		scanner := client.createScanner(conn)
+		scanner := client.createScanner(context.Background(), conn)
 		for scanner.Scan() {
 			t.Log("receive request")
 			r, err := decode(scanner.Bytes())
@@ -309,7 +309,7 @@ func TestInvokeAsyncTimeout(t *testing.T) {
 		assert.Nil(t, err)
 		defer conn.Close()
 
-		scanner := client.createScanner(conn)
+		scanner := client.createScanner(context.Background(), conn)
 		for scanner.Scan() {
 			t.Logf("receive request.")
 			_, err := decode(scanner.Bytes())
@@ -354,7 +354,7 @@ func TestInvokeOneWay(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		scanner := client.createScanner(conn)
+		scanner := client.createScanner(context.Background(), conn)
 		for scanner.Scan() {
 			receivedRemotingCommand, err := decode(scanner.Bytes())
 			if err != nil {

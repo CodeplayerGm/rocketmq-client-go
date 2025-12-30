@@ -30,30 +30,33 @@ import (
 
 func main() {
 	c, _ := rocketmq.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName("testGroup"),
 		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		consumer.WithConsumerModel(consumer.Clustering),
 		consumer.WithConsumeFromWhere(consumer.ConsumeFromFirstOffset),
 		consumer.WithConsumerOrder(true),
 	)
-	err := c.Subscribe("TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
-		orderlyCtx, _ := primitive.GetOrderlyCtx(ctx)
-		fmt.Printf("orderly context: %v\n", orderlyCtx)
-		fmt.Printf("subscribe orderly callback: %v \n", msgs)
-		return consumer.ConsumeSuccess, nil
-	})
+	err := c.Subscribe(
+		context.Background(),
+		"TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
+			msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			orderlyCtx, _ := primitive.GetOrderlyCtx(ctx)
+			fmt.Printf("orderly context: %v\n", orderlyCtx)
+			fmt.Printf("subscribe orderly callback: %v \n", msgs)
+			return consumer.ConsumeSuccess, nil
+		})
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	// Note: start after subscribe
-	err = c.Start()
+	err = c.Start(context.Background())
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(-1)
 	}
 	time.Sleep(time.Hour)
-	err = c.Shutdown()
+	err = c.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("Shutdown Consumer error: %s", err.Error())
 	}

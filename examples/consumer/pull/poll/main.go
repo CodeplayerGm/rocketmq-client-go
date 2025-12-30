@@ -55,6 +55,7 @@ func main() {
 		log.Fatalf("NewNamesrvAddr err: %v", err)
 	}
 	pullConsumer, err = rocketmq.NewPullConsumer(
+		context.Background(),
 		consumer.WithGroupName(consumerGroupName),
 		consumer.WithNameServer(nameSrv),
 		consumer.WithCredentials(primitive.Credentials{
@@ -71,11 +72,11 @@ func main() {
 		Type:       consumer.TAG,
 		Expression: tag,
 	}
-	err = pullConsumer.Subscribe(topic, selector)
+	err = pullConsumer.Subscribe(context.Background(), topic, selector)
 	if err != nil {
 		log.Fatalf("fail to Subscribe: %v", err)
 	}
-	err = pullConsumer.Start()
+	err = pullConsumer.Start(context.Background())
 	if err != nil {
 		log.Fatalf("fail to Start: %v", err)
 	}

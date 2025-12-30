@@ -35,6 +35,7 @@ import (
 
 func main() {
 	c, _ := rocketmq.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName("testGroup"),
 		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{"127.0.0.1:9876"})),
 		consumer.WithConsumerModel(consumer.Clustering),
@@ -43,33 +44,35 @@ func main() {
 		consumer.WithMaxReconsumeTimes(5),
 	)
 
-	err := c.Subscribe("TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
-		orderlyCtx, _ := primitive.GetOrderlyCtx(ctx)
-		fmt.Printf("orderly context: %v\n", orderlyCtx)
-		fmt.Printf("subscribe orderly callback len: %d \n", len(msgs))
+	err := c.Subscribe(
+		context.Background(),
+		"TopicTest", consumer.MessageSelector{}, func(ctx context.Context,
+			msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			orderlyCtx, _ := primitive.GetOrderlyCtx(ctx)
+			fmt.Printf("orderly context: %v\n", orderlyCtx)
+			fmt.Printf("subscribe orderly callback len: %d \n", len(msgs))
 
-		for _, msg := range msgs {
-			if msg.ReconsumeTimes > 5 {
-				fmt.Printf("msg ReconsumeTimes > 5. msg: %v", msg)
-			} else {
-				fmt.Printf("subscribe orderly callback: %v \n", msg)
+			for _, msg := range msgs {
+				if msg.ReconsumeTimes > 5 {
+					fmt.Printf("msg ReconsumeTimes > 5. msg: %v", msg)
+				} else {
+					fmt.Printf("subscribe orderly callback: %v \n", msg)
+				}
 			}
-		}
-		return consumer.SuspendCurrentQueueAMoment, nil
+			return consumer.SuspendCurrentQueueAMoment, nil
 
-	})
+		})
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	// Note: start after subscribe
-	err = c.Start()
+	err = c.Start(context.Background())
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(-1)
 	}
 	time.Sleep(time.Hour)
-	err = c.Shutdown()
+	err = c.Shutdown(context.Background())
 	if err != nil {
 		fmt.Printf("shundown Consumer error: %s", err.Error())
 	}

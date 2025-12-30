@@ -5,6 +5,7 @@
 package consumer
 
 import (
+	context "context"
 	reflect "reflect"
 
 	primitive "github.com/apache/rocketmq-client-go/v2/primitive"
@@ -49,70 +50,70 @@ func (mr *MockOffsetStoreMockRecorder) getMQOffsetMap(topic interface{}) *gomock
 }
 
 // persist mocks base method.
-func (m *MockOffsetStore) persist(mqs []*primitive.MessageQueue) {
+func (m *MockOffsetStore) persist(ctx context.Context, mqs []*primitive.MessageQueue) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "persist", mqs)
+	m.ctrl.Call(m, "persist", ctx, mqs)
 }
 
 // persist indicates an expected call of persist.
-func (mr *MockOffsetStoreMockRecorder) persist(mqs interface{}) *gomock.Call {
+func (mr *MockOffsetStoreMockRecorder) persist(ctx, mqs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "persist", reflect.TypeOf((*MockOffsetStore)(nil).persist), mqs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "persist", reflect.TypeOf((*MockOffsetStore)(nil).persist), ctx, mqs)
 }
 
 // persistSync mocks base method.
-func (m *MockOffsetStore) persistSync(mqs []*primitive.MessageQueue) error {
+func (m *MockOffsetStore) persistSync(ctx context.Context, mqs []*primitive.MessageQueue) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "persistSync", mqs)
+	ret := m.ctrl.Call(m, "persistSync", ctx, mqs)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // persistSync indicates an expected call of persistSync.
-func (mr *MockOffsetStoreMockRecorder) persistSync(mqs interface{}) *gomock.Call {
+func (mr *MockOffsetStoreMockRecorder) persistSync(ctx, mqs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "persistSync", reflect.TypeOf((*MockOffsetStore)(nil).persistSync), mqs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "persistSync", reflect.TypeOf((*MockOffsetStore)(nil).persistSync), ctx, mqs)
 }
 
 // read mocks base method.
-func (m *MockOffsetStore) read(mq *primitive.MessageQueue, t readType) int64 {
+func (m *MockOffsetStore) read(ctx context.Context, mq *primitive.MessageQueue, t readType) int64 {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "read", mq, t)
+	ret := m.ctrl.Call(m, "read", ctx, mq, t)
 	ret0, _ := ret[0].(int64)
 	return ret0
 }
 
 // read indicates an expected call of read.
-func (mr *MockOffsetStoreMockRecorder) read(mq, t interface{}) *gomock.Call {
+func (mr *MockOffsetStoreMockRecorder) read(ctx, mq, t interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "read", reflect.TypeOf((*MockOffsetStore)(nil).read), mq, t)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "read", reflect.TypeOf((*MockOffsetStore)(nil).read), ctx, mq, t)
 }
 
 // readWithException mocks base method.
-func (m *MockOffsetStore) readWithException(mq *primitive.MessageQueue, t readType) (int64, error) {
+func (m *MockOffsetStore) readWithException(ctx context.Context, mq *primitive.MessageQueue, t readType) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "readWithException", mq, t)
+	ret := m.ctrl.Call(m, "readWithException", ctx, mq, t)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // readWithException indicates an expected call of readWithException.
-func (mr *MockOffsetStoreMockRecorder) readWithException(mq, t interface{}) *gomock.Call {
+func (mr *MockOffsetStoreMockRecorder) readWithException(ctx, mq, t interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "readWithException", reflect.TypeOf((*MockOffsetStore)(nil).readWithException), mq, t)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "readWithException", reflect.TypeOf((*MockOffsetStore)(nil).readWithException), ctx, mq, t)
 }
 
 // remove mocks base method.
-func (m *MockOffsetStore) remove(mq *primitive.MessageQueue) {
+func (m *MockOffsetStore) remove(ctx context.Context, mq *primitive.MessageQueue) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "remove", mq)
+	m.ctrl.Call(m, "remove", ctx, mq)
 }
 
 // remove indicates an expected call of remove.
-func (mr *MockOffsetStoreMockRecorder) remove(mq interface{}) *gomock.Call {
+func (mr *MockOffsetStoreMockRecorder) remove(ctx, mq interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "remove", reflect.TypeOf((*MockOffsetStore)(nil).remove), mq)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "remove", reflect.TypeOf((*MockOffsetStore)(nil).remove), ctx, mq)
 }
 
 // update mocks base method.

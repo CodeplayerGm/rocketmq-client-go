@@ -90,7 +90,7 @@ func (s *consumeSnapshots) printStati() {
 	avgS2CRT := float64(l.store2ConsumerTotalRT-f.store2ConsumerTotalRT) / respSucCount
 	s.RUnlock()
 
-	rlog.Info("Benchmark Consumer Snapshot", map[string]interface{}{
+	rlog.Info(context.Background(), "Benchmark Consumer Snapshot", map[string]interface{}{
 		"consumeTPS":     int64(consumeTps),
 		"average(B2C)RT": avgB2CRT,
 		"average(S2C)RT": avgS2CRT,
@@ -133,6 +133,7 @@ func init() {
 
 func (bc *consumerBenchmark) consumeMsg(stati *statiBenchmarkConsumerSnapshot, exit chan struct{}) {
 	c, err := rocketmq.NewPushConsumer(
+		context.Background(),
 		consumer.WithGroupName(bc.groupID),
 		consumer.WithNameServer([]string{bc.nameSrv}),
 	)
@@ -141,7 +142,7 @@ func (bc *consumerBenchmark) consumeMsg(stati *statiBenchmarkConsumerSnapshot, e
 	}
 
 	selector := consumer.MessageSelector{}
-	err = c.Subscribe(bc.topic, selector, func(ctx context.Context,
+	err = c.Subscribe(context.Background(), bc.topic, selector, func(ctx context.Context,
 		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
 		for _, msg := range msgs {
 			atomic.AddInt64(&stati.receiveMessageTotal, 1)
@@ -168,11 +169,11 @@ func (bc *consumerBenchmark) consumeMsg(stati *statiBenchmarkConsumerSnapshot, e
 		return consumer.ConsumeSuccess, nil
 	})
 
-	rlog.Info("Test Start", nil)
-	c.Start()
+	rlog.Info(context.Background(), "Test Start", nil)
+	c.Start(context.Background())
 	select {
 	case <-exit:
-		c.Shutdown()
+		c.Shutdown(context.Background())
 		return
 	}
 }
@@ -180,31 +181,31 @@ func (bc *consumerBenchmark) consumeMsg(stati *statiBenchmarkConsumerSnapshot, e
 func (bc *consumerBenchmark) run(args []string) {
 	bc.flags.Parse(args)
 	if bc.topic == "" {
-		rlog.Error("Empty Topic", nil)
+		rlog.Error(context.Background(), "Empty Topic", nil)
 		bc.usage()
 		return
 	}
 
 	if bc.groupPrefix == "" {
-		rlog.Error("Empty Group Prefix", nil)
+		rlog.Error(context.Background(), "Empty Group Prefix", nil)
 		bc.usage()
 		return
 	}
 
 	if bc.nameSrv == "" {
-		rlog.Error("Empty Nameserver", nil)
+		rlog.Error(context.Background(), "Empty Nameserver", nil)
 		bc.usage()
 		return
 	}
 
 	if bc.testMinutes <= 0 {
-		rlog.Error("Test Time Must Be Positive Integer", nil)
+		rlog.Error(context.Background(), "Test Time Must Be Positive Integer", nil)
 		bc.usage()
 		return
 	}
 
 	if bc.instanceCount <= 0 {
-		rlog.Error("Thread Count Must Be Positive Integer", nil)
+		rlog.Error(context.Background(), "Thread Count Must Be Positive Integer", nil)
 		bc.usage()
 		return
 	}
@@ -269,7 +270,7 @@ func (bc *consumerBenchmark) run(args []string) {
 	wg.Wait()
 	snapshots.takeSnapshot()
 	snapshots.printStati()
-	rlog.Info("Test Done", nil)
+	rlog.Info(context.Background(), "Test Done", nil)
 }
 
 func (bc *consumerBenchmark) usage() {

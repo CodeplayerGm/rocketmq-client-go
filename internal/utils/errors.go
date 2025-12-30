@@ -18,13 +18,14 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 	"runtime"
 )
 
-func CheckError(action string, err error) {
+func CheckError(ctx context.Context, action string, err error) {
 	if err != nil {
-		rlog.Error(action, map[string]interface{}{
+		rlog.Error(ctx, action, map[string]interface{}{
 			rlog.LogKeyUnderlayError: err.Error(),
 		})
 	}

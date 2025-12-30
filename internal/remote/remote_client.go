@@ -53,7 +53,7 @@ type RemotingClient interface {
 	InvokeSync(ctx context.Context, addr string, request *RemotingCommand) (*RemotingCommand, error)
 	InvokeAsync(ctx context.Context, addr string, request *RemotingCommand, callback func(*ResponseFuture)) error
 	InvokeOneWay(ctx context.Context, addr string, request *RemotingCommand) error
-	ShutDown()
+	ShutDown(ctx context.Context)
 }
 
 var _ RemotingClient = &remotingClient{}
@@ -171,12 +171,12 @@ func (c *remotingClient) connect(ctx context.Context, addr string) (*tcpConnWrap
 	}
 	c.connectionTable.Store(addr, tcpConn)
 	go primitive.WithRecover(func() {
-		c.receiveResponse(tcpConn)
+		c.receiveResponse(ctx, tcpConn)
 	})
 	return tcpConn, nil
 }
 
-func (c *remotingClient) receiveResponse(r *tcpConnWrapper) {
+func (c *remotingClient) receiveResponse(ctx context.Context, r *tcpConnWrapper) {
 	var err error
 	header := primitive.GetHeader()
 	defer primitive.BackHeader(header)
@@ -192,13 +192,13 @@ func (c *remotingClient) receiveResponse(r *tcpConnWrapper) {
 				isTimeout = true
 			}
 			if !(err == io.EOF || isTimeout) {
-				rlog.Error("conn error, close connection", map[string]interface{}{
+				rlog.Error(ctx, "conn error, close connection", map[string]interface{}{
 					"remoteAddr":             r.RemoteAddr(),
 					"localAddr":              r.LocalAddr(),
 					rlog.LogKeyUnderlayError: err,
 				})
 			} else {
-				rlog.Debug("conn error, close connection", map[string]interface{}{
+				rlog.Debug(ctx, "conn error, close connection", map[string]interface{}{
 					"remoteAddr":             r.RemoteAddr(),
 					"localAddr":              r.LocalAddr(),
 					rlog.LogKeyUnderlayError: err,
@@ -234,16 +234,16 @@ func (c *remotingClient) receiveResponse(r *tcpConnWrapper) {
 
 		cmd, err := decode(buf)
 		if err != nil {
-			rlog.Error("decode RemotingCommand error", map[string]interface{}{
+			rlog.Error(ctx, "decode RemotingCommand error", map[string]interface{}{
 				rlog.LogKeyUnderlayError: err,
 			})
 			continue
 		}
-		c.processCMD(cmd, r)
+		c.processCMD(ctx, cmd, r)
 	}
 }
 
-func (c *remotingClient) processCMD(cmd *RemotingCommand, r *tcpConnWrapper) {
+func (c *remotingClient) processCMD(ctx context.Context, cmd *RemotingCommand, r *tcpConnWrapper) {
 	if cmd.isResponseType() {
 		resp, exist := c.responseTable.Load(cmd.Opaque)
 		if exist {
@@ -269,7 +269,7 @@ func (c *remotingClient) processCMD(cmd *RemotingCommand, r *tcpConnWrapper) {
 					res.Flag |= 1 << 0
 					err := c.sendRequest(context.Background(), r, res)
 					if err != nil {
-						rlog.Warning("send response to broker error", map[string]interface{}{
+						rlog.Warning(ctx, "send response to broker error", map[string]interface{}{
 							rlog.LogKeyUnderlayError: err,
 							"responseCode":           res.Code,
 						})
@@ -277,14 +277,14 @@ func (c *remotingClient) processCMD(cmd *RemotingCommand, r *tcpConnWrapper) {
 				}
 			})
 		} else {
-			rlog.Warning("receive broker's requests, but no func to handle", map[string]interface{}{
+			rlog.Warning(ctx, "receive broker's requests, but no func to handle", map[string]interface{}{
 				"responseCode": cmd.Code,
 			})
 		}
 	}
 }
 
-func (c *remotingClient) createScanner(r io.Reader) *bufio.Scanner {
+func (c *remotingClient) createScanner(ctx context.Context, r io.Reader) *bufio.Scanner {
 	scanner := bufio.NewScanner(r)
 
 	// max batch size: 32, max message size: 4Mb
@@ -292,7 +292,7 @@ func (c *remotingClient) createScanner(r io.Reader) *bufio.Scanner {
 	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
 		defer func() {
 			if err := recover(); err != nil {
-				rlog.Error("scanner split panic", map[string]interface{}{
+				rlog.Error(ctx, "scanner split panic", map[string]interface{}{
 					rlog.LogKeyUnderlayError: err,
 					rlog.LogKeyStack:         utils.GetStackAsString(false),
 				})
@@ -303,7 +303,7 @@ func (c *remotingClient) createScanner(r io.Reader) *bufio.Scanner {
 				var length int32
 				err := binary.Read(bytes.NewReader(data[0:4]), binary.BigEndian, &length)
 				if err != nil {
-					rlog.Error("split data error", map[string]interface{}{
+					rlog.Error(ctx, "split data error", map[string]interface{}{
 						rlog.LogKeyUnderlayError: err,
 					})
 					return 0, nil, err
@@ -341,7 +341,7 @@ func (c *remotingClient) doRequest(ctx context.Context, conn *tcpConnWrapper, re
 	}
 	err := conn.Conn.SetWriteDeadline(deadline)
 	if err != nil {
-		rlog.Error("conn error, close connection", map[string]interface{}{
+		rlog.Error(ctx, "conn error, close connection", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 
@@ -352,7 +352,7 @@ func (c *remotingClient) doRequest(ctx context.Context, conn *tcpConnWrapper, re
 
 	err = request.WriteTo(conn)
 	if err != nil {
-		rlog.Error("conn error, close connection", map[string]interface{}{
+		rlog.Error(ctx, "conn error, close connection", map[string]interface{}{
 			rlog.LogKeyUnderlayError: err,
 		})
 
@@ -375,7 +375,7 @@ func (c *remotingClient) closeConnection(toCloseConn *tcpConnWrapper) {
 	})
 }
 
-func (c *remotingClient) ShutDown() {
+func (c *remotingClient) ShutDown(ctx context.Context) {
 	c.responseTable.Range(func(key, value interface{}) bool {
 		c.responseTable.Delete(key)
 		return true
@@ -384,7 +384,7 @@ func (c *remotingClient) ShutDown() {
 		conn := value.(*tcpConnWrapper)
 		err := conn.destroy()
 		if err != nil {
-			rlog.Warning("close remoting conn error", map[string]interface{}{
+			rlog.Warning(ctx, "close remoting conn error", map[string]interface{}{
 				"remote":                 conn.RemoteAddr(),
 				rlog.LogKeyUnderlayError: err,
 			})

@@ -19,11 +19,9 @@ package rlog
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 
-	"gopkg.in/natefinch/lumberjack.v2"
-
+	"context"
 	"github.com/sirupsen/logrus"
 )
 
@@ -47,18 +45,18 @@ const (
 	LogKeyStack                = "stack"
 )
 
-type Logger interface {
-	Debug(msg string, fields map[string]interface{})
-	Info(msg string, fields map[string]interface{})
-	Warning(msg string, fields map[string]interface{})
-	Error(msg string, fields map[string]interface{})
-	Fatal(msg string, fields map[string]interface{})
+type CtxLogger interface {
+	Debug(ctx context.Context, msg string, fields map[string]interface{})
+	Info(ctx context.Context, msg string, fields map[string]interface{})
+	Warning(ctx context.Context, msg string, fields map[string]interface{})
+	Error(ctx context.Context, msg string, fields map[string]interface{})
+	Fatal(ctx context.Context, msg string, fields map[string]interface{})
 	Level(level string)
 	OutputPath(path string) (err error)
 }
 
 func init() {
-	r := &defaultLogger{
+	r := &defaultCtxLogger{
 		logger: logrus.New(),
 	}
 	level := os.Getenv("ROCKETMQ_GO_LOG_LEVEL")
@@ -77,110 +75,10 @@ func init() {
 	rLog = r
 }
 
-var rLog Logger
-
-type defaultLogger struct {
-	logger *logrus.Logger
-}
-
-func (l *defaultLogger) Debug(msg string, fields map[string]interface{}) {
-	if msg == "" && len(fields) == 0 {
-		return
-	}
-	l.logger.WithFields(fields).Debug(msg)
-}
-
-func (l *defaultLogger) Info(msg string, fields map[string]interface{}) {
-	if msg == "" && len(fields) == 0 {
-		return
-	}
-	l.logger.WithFields(fields).Info(msg)
-}
-
-func (l *defaultLogger) Warning(msg string, fields map[string]interface{}) {
-	if msg == "" && len(fields) == 0 {
-		return
-	}
-	l.logger.WithFields(fields).Warning(msg)
-}
-
-func (l *defaultLogger) Error(msg string, fields map[string]interface{}) {
-	if msg == "" && len(fields) == 0 {
-		return
-	}
-	l.logger.WithFields(fields).Error(msg)
-}
-
-func (l *defaultLogger) Fatal(msg string, fields map[string]interface{}) {
-	if msg == "" && len(fields) == 0 {
-		return
-	}
-	l.logger.WithFields(fields).Fatal(msg)
-}
-
-func (l *defaultLogger) Level(level string) {
-	switch strings.ToLower(level) {
-	case "debug":
-		l.logger.SetLevel(logrus.DebugLevel)
-	case "warn":
-		l.logger.SetLevel(logrus.WarnLevel)
-	case "error":
-		l.logger.SetLevel(logrus.ErrorLevel)
-	case "fatal":
-		l.logger.SetLevel(logrus.FatalLevel)
-	default:
-		l.logger.SetLevel(logrus.InfoLevel)
-	}
-}
-
-type Config struct {
-	OutputPath    string
-	MaxFileSizeMB int
-	MaxBackups    int
-	MaxAges       int
-	Compress      bool
-	LocalTime     bool
-}
-
-func (c *Config) Logger() *lumberjack.Logger {
-	return &lumberjack.Logger{
-		Filename:   filepath.ToSlash(c.OutputPath),
-		MaxSize:    c.MaxFileSizeMB, // MB
-		MaxBackups: c.MaxBackups,
-		MaxAge:     c.MaxAges,  // days
-		Compress:   c.Compress, // disabled by default
-		LocalTime:  c.LocalTime,
-	}
-}
-
-const defaultLogPath = "/tmp/rocketmq-client.log"
-
-func defaultConfig() Config {
-	return Config{
-		OutputPath:    defaultLogPath,
-		MaxFileSizeMB: 10,
-		MaxBackups:    5,
-		MaxAges:       3,
-		Compress:      false,
-		LocalTime:     true,
-	}
-}
-
-func (l *defaultLogger) Config(conf Config) (err error) {
-	l.logger.Out = conf.Logger()
-	return
-}
-
-func (l *defaultLogger) OutputPath(path string) (err error) {
-	config := defaultConfig()
-	config.OutputPath = path
-
-	l.logger.Out = config.Logger()
-	return
-}
+var rLog CtxLogger
 
 // SetLogger use specified logger user customized, in general, we suggest user to replace the default logger with specified
-func SetLogger(logger Logger) {
+func SetLogger(logger CtxLogger) {
 	rLog = logger
 }
 
@@ -199,28 +97,28 @@ func SetOutputPath(path string) (err error) {
 	return rLog.OutputPath(path)
 }
 
-func Debug(msg string, fields map[string]interface{}) {
-	rLog.Debug(msg, fields)
+func Debug(ctx context.Context, msg string, fields map[string]interface{}) {
+	rLog.Debug(ctx, msg, fields)
 }
 
-func Info(msg string, fields map[string]interface{}) {
+func Info(ctx context.Context, msg string, fields map[string]interface{}) {
 	if msg == "" && len(fields) == 0 {
 		return
 	}
-	rLog.Info(msg, fields)
+	rLog.Info(ctx, msg, fields)
 }
 
-func Warning(msg string, fields map[string]interface{}) {
+func Warning(ctx context.Context, msg string, fields map[string]interface{}) {
 	if msg == "" && len(fields) == 0 {
 		return
 	}
-	rLog.Warning(msg, fields)
+	rLog.Warning(ctx, msg, fields)
 }
 
-func Error(msg string, fields map[string]interface{}) {
-	rLog.Error(msg, fields)
+func Error(ctx context.Context, msg string, fields map[string]interface{}) {
+	rLog.Error(ctx, msg, fields)
 }
 
-func Fatal(msg string, fields map[string]interface{}) {
-	rLog.Fatal(msg, fields)
+func Fatal(ctx context.Context, msg string, fields map[string]interface{}) {
+	rLog.Fatal(ctx, msg, fields)
 }

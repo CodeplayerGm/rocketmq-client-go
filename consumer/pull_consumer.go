@@ -89,17 +89,17 @@ type defaultPullConsumer struct {
 	done                chan struct{}
 	closeOnce           sync.Once
 	consumeRequestCache chan *ConsumeRequest
-	submitToConsume     func(*processQueue, *primitive.MessageQueue)
+	submitToConsume     func(context.Context, *processQueue, *primitive.MessageQueue)
 	interceptor         primitive.Interceptor
 }
 
-func NewPullConsumer(options ...Option) (*defaultPullConsumer, error) {
+func NewPullConsumer(ctx context.Context, options ...Option) (*defaultPullConsumer, error) {
 	defaultOpts := defaultPullConsumerOptions()
 	for _, apply := range options {
 		apply(&defaultOpts)
 	}
 
-	srvs, err := internal.NewNamesrv(defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
+	srvs, err := internal.NewNamesrv(ctx, defaultOpts.Resolver, defaultOpts.RemotingClientConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "new Namesrv failed.")
 	}
@@ -109,7 +109,7 @@ func NewPullConsumer(options ...Option) (*defaultPullConsumer, error) {
 
 	defaultOpts.Namesrv = srvs
 	dc := &defaultConsumer{
-		client:        internal.GetOrNewRocketMQClient(defaultOpts.ClientOptions, nil),
+		client:        internal.GetOrNewRocketMQClient(ctx, defaultOpts.ClientOptions, nil),
 		consumerGroup: utils.WrapNamespace(defaultOpts.Namespace, defaultOpts.GroupName),
 		cType:         _PullConsume,
 		state:         atomic2.NewInt32(int32(internal.StateCreateJust)),
@@ -136,13 +136,13 @@ func NewPullConsumer(options ...Option) (*defaultPullConsumer, error) {
 	return c, nil
 }
 
-func (pc *defaultPullConsumer) GetTopicRouteInfo(topic string) ([]*primitive.MessageQueue, error) {
+func (pc *defaultPullConsumer) GetTopicRouteInfo(ctx context.Context, topic string) ([]*primitive.MessageQueue, error) {
 	topicWithNs := utils.WrapNamespace(pc.option.Namespace, topic)
 	value, exist := pc.defaultConsumer.topicSubscribeInfoTable.Load(topicWithNs)
 	if exist {
 		return value.([]*primitive.MessageQueue), nil
 	}
-	pc.client.UpdateTopicRouteInfo()
+	pc.client.UpdateTopicRouteInfo(ctx)
 	value, exist = pc.defaultConsumer.topicSubscribeInfoTable.Load(topicWithNs)
 	if !exist {
 		return nil, errors2.ErrRouteNotFound
@@ -150,7 +150,7 @@ func (pc *defaultPullConsumer) GetTopicRouteInfo(topic string) ([]*primitive.Mes
 	return value.([]*primitive.MessageQueue), nil
 }
 
-func (pc *defaultPullConsumer) Subscribe(topic string, selector MessageSelector) error {
+func (pc *defaultPullConsumer) Subscribe(ctx context.Context, topic string, selector MessageSelector) error {
 	if pc.state.Load() == int32(internal.StateStartFailed) ||
 		pc.state.Load() == int32(internal.StateShutdown) {
 		return errors2.ErrStartTopic
@@ -172,7 +172,7 @@ func (pc *defaultPullConsumer) Subscribe(topic string, selector MessageSelector)
 	return nil
 }
 
-func (pc *defaultPullConsumer) Unsubscribe(topic string) error {
+func (pc *defaultPullConsumer) Unsubscribe(ctx context.Context, topic string) error {
 	if pc.SubType == Assign {
 		return errors2.ErrSubscriptionType
 	}
@@ -181,7 +181,7 @@ func (pc *defaultPullConsumer) Unsubscribe(topic string) error {
 	return nil
 }
 
-func (pc *defaultPullConsumer) Assign(topic string, mqs []*primitive.MessageQueue) error {
+func (pc *defaultPullConsumer) Assign(ctx context.Context, topic string, mqs []*primitive.MessageQueue) error {
 	if pc.SubType == Subscribe {
 		return errors2.ErrSubscriptionType
 	}
@@ -194,19 +194,19 @@ func (pc *defaultPullConsumer) Assign(topic string, mqs []*primitive.MessageQueu
 	pc.subscriptionDataTable.Store(topic, data)
 	oldQueues := pc.allocateQueues
 	pc.allocateQueues = mqs
-	rlog.Info("pull consumer assign new mqs", map[string]interface{}{
+	rlog.Info(ctx, "pull consumer assign new mqs", map[string]interface{}{
 		"topic":  topic,
 		"group":  pc.GroupName,
 		"oldMqs": oldQueues,
 		"newMqs": mqs,
 	})
 	if pc.isRunning() {
-		pc.Rebalance()
+		pc.Rebalance(ctx)
 	}
 	return nil
 }
 
-func (pc *defaultPullConsumer) nextPullOffset(mq *primitive.MessageQueue, originOffset int64) int64 {
+func (pc *defaultPullConsumer) nextPullOffset(ctx context.Context, mq *primitive.MessageQueue, originOffset int64) int64 {
 	if pc.SubType != Assign {
 		return originOffset
 	}
@@ -216,7 +216,7 @@ func (pc *defaultPullConsumer) nextPullOffset(mq *primitive.MessageQueue, origin
 	} else {
 		nextOffset := value.(int64)
 		_ = pc.updateOffset(mq, nextOffset)
-		rlog.Info("pull consumer assign new offset", map[string]interface{}{
+		rlog.Info(ctx, "pull consumer assign new offset", map[string]interface{}{
 			"group":  pc.GroupName,
 			"mq":     mq,
 			"offset": nextOffset,
@@ -225,12 +225,12 @@ func (pc *defaultPullConsumer) nextPullOffset(mq *primitive.MessageQueue, origin
 	}
 }
 
-func (pc *defaultPullConsumer) Start() error {
+func (pc *defaultPullConsumer) Start(ctx context.Context) error {
 	var err error
 	pc.once.Do(func() {
 		err = pc.validate()
 		if err != nil {
-			rlog.Error("the consumer group option validate fail", map[string]interface{}{
+			rlog.Error(ctx, "the consumer group option validate fail", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: pc.consumerGroup,
 				rlog.LogKeyUnderlayError: err.Error(),
 			})
@@ -239,13 +239,13 @@ func (pc *defaultPullConsumer) Start() error {
 		}
 		err = pc.defaultConsumer.client.RegisterConsumer(pc.consumerGroup, pc)
 		if err != nil {
-			rlog.Error("defaultPullConsumer the consumer group has been created, specify another one", map[string]interface{}{
+			rlog.Error(ctx, "defaultPullConsumer the consumer group has been created, specify another one", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: pc.consumerGroup,
 			})
 			err = errors2.ErrCreated
 			return
 		}
-		err = pc.start()
+		err = pc.start(ctx)
 		if err != nil {
 			return
 		}
@@ -255,10 +255,10 @@ func (pc *defaultPullConsumer) Start() error {
 				select {
 				case pr := <-pc.prCh:
 					go func() {
-						pc.pullMessage(&pr)
+						pc.pullMessage(ctx, &pr)
 					}()
 				case <-pc.done:
-					rlog.Info("defaultPullConsumer close PullRequest listener.", map[string]interface{}{
+					rlog.Info(ctx, "defaultPullConsumer close PullRequest listener.", map[string]interface{}{
 						rlog.LogKeyConsumerGroup: pc.consumerGroup,
 					})
 					return
@@ -269,12 +269,12 @@ func (pc *defaultPullConsumer) Start() error {
 	if err != nil {
 		return err
 	}
-	pc.client.UpdateTopicRouteInfo()
+	pc.client.UpdateTopicRouteInfo(ctx)
 	_, exist := pc.topicSubscribeInfoTable.Load(pc.topic)
 	if !exist {
-		err = pc.Shutdown()
+		err = pc.Shutdown(ctx)
 		if err != nil {
-			rlog.Error("defaultPullConsumer.Shutdown . route info not found, it may not exist", map[string]interface{}{
+			rlog.Error(ctx, "defaultPullConsumer.Shutdown . route info not found, it may not exist", map[string]interface{}{
 				rlog.LogKeyTopic:         pc.topic,
 				rlog.LogKeyUnderlayError: err,
 			})
@@ -282,8 +282,8 @@ func (pc *defaultPullConsumer) Start() error {
 		return fmt.Errorf("the topic=%s route info not found, it may not exist", pc.topic)
 	}
 	pc.client.CheckClientInBroker()
-	pc.client.SendHeartbeatToAllBrokerWithLock()
-	go pc.client.RebalanceImmediately()
+	pc.client.SendHeartbeatToAllBrokerWithLock(ctx)
+	go pc.client.RebalanceImmediately(ctx)
 
 	return err
 }
@@ -296,7 +296,7 @@ func (pc *defaultPullConsumer) Poll(ctx context.Context, timeout time.Duration) 
 		return nil, ErrNoNewMsg
 	case cr := <-pc.consumeRequestCache:
 		if cr.processQueue.IsDroppd() {
-			rlog.Info("defaultPullConsumer poll the message queue not be able to consume, because it was dropped", map[string]interface{}{
+			rlog.Info(ctx, "defaultPullConsumer poll the message queue not be able to consume, because it was dropped", map[string]interface{}{
 				rlog.LogKeyMessageQueue:  cr.messageQueue.String(),
 				rlog.LogKeyConsumerGroup: pc.consumerGroup,
 			})
@@ -322,7 +322,7 @@ func (pc *defaultPullConsumer) ACK(ctx context.Context, cr *ConsumeRequest, resu
 	}
 RETRY:
 	if pq.IsDroppd() {
-		rlog.Info("defaultPullConsumer the message queue not be able to consume, because it was dropped", map[string]interface{}{
+		rlog.Info(ctx, "defaultPullConsumer the message queue not be able to consume, because it was dropped", map[string]interface{}{
 			rlog.LogKeyMessageQueue:  mq.String(),
 			rlog.LogKeyConsumerGroup: pc.consumerGroup,
 		})
@@ -367,14 +367,14 @@ RETRY:
 			pc.stat.increaseConsumeFailedTPS(pc.consumerGroup, mq.Topic, len(msgList))
 			if pc.model == BroadCasting {
 				for i := 0; i < len(msgList); i++ {
-					rlog.Warning("defaultPullConsumer BROADCASTING, the message consume failed, drop it", map[string]interface{}{
+					rlog.Warning(ctx, "defaultPullConsumer BROADCASTING, the message consume failed, drop it", map[string]interface{}{
 						"message": msgList[i],
 					})
 				}
 			} else {
 				for i := 0; i < len(msgList); i++ {
 					msg := msgList[i]
-					if pc.sendMessageBack(mq.BrokerName, msg, concurrentCtx.DelayLevelWhenNextConsume) {
+					if pc.sendMessageBack(ctx, mq.BrokerName, msg, concurrentCtx.DelayLevelWhenNextConsume) {
 						msgBackSucceed = append(msgBackSucceed, msg)
 					} else {
 						msg.ReconsumeTimes += 1
@@ -395,7 +395,7 @@ RETRY:
 			goto RETRY
 		}
 	} else {
-		rlog.Warning("defaultPullConsumer processQueue is dropped without process consume result.", map[string]interface{}{
+		rlog.Warning(ctx, "defaultPullConsumer processQueue is dropped without process consume result.", map[string]interface{}{
 			rlog.LogKeyMessageQueue: mq,
 			"message":               msgList,
 		})
@@ -419,18 +419,18 @@ func (pc *defaultPullConsumer) resetRetryAndNamespace(msgList []*primitive.Messa
 }
 
 func (pc *defaultPullConsumer) Pull(ctx context.Context, numbers int) (*primitive.PullResult, error) {
-	mq := pc.getNextQueueOf(pc.topic)
+	mq := pc.getNextQueueOf(ctx, pc.topic)
 	if mq == nil {
 		return nil, fmt.Errorf("prepare to pull topic: %s, but no queue is founded", pc.topic)
 	}
 
 	data := buildSubscriptionData(mq.Topic, pc.selector)
-	nextOffset, err := pc.nextOffsetOf(mq)
+	nextOffset, err := pc.nextOffsetOf(ctx, mq)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := pc.pull(context.Background(), mq, data, nextOffset, numbers)
+	result, err := pc.pull(ctx, mq, data, nextOffset, numbers)
 	if err != nil {
 		return nil, err
 	}
@@ -455,14 +455,14 @@ func (pc *defaultPullConsumer) Pull(ctx context.Context, numbers int) (*primitiv
 	return result, nil
 }
 
-func (pc *defaultPullConsumer) getNextQueueOf(topic string) *primitive.MessageQueue {
+func (pc *defaultPullConsumer) getNextQueueOf(ctx context.Context, topic string) *primitive.MessageQueue {
 	var queues []*primitive.MessageQueue
 	var err error
 	if len(pc.allocateQueues) == 0 {
 		topic = utils.WrapNamespace(pc.option.Namespace, topic)
-		queues, err = pc.defaultConsumer.client.GetNameSrv().FetchSubscribeMessageQueues(topic)
+		queues, err = pc.defaultConsumer.client.GetNameSrv().FetchSubscribeMessageQueues(ctx, topic)
 		if err != nil {
-			rlog.Error("get next mq error", map[string]interface{}{
+			rlog.Error(ctx, "get next mq error", map[string]interface{}{
 				rlog.LogKeyTopic:         topic,
 				rlog.LogKeyUnderlayError: err.Error(),
 			})
@@ -470,7 +470,7 @@ func (pc *defaultPullConsumer) getNextQueueOf(topic string) *primitive.MessageQu
 		}
 
 		if len(queues) == 0 {
-			rlog.Warning("defaultPullConsumer.getNextQueueOf len is 0", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer.getNextQueueOf len is 0", map[string]interface{}{
 				rlog.LogKeyTopic: topic,
 			})
 			return nil
@@ -482,7 +482,7 @@ func (pc *defaultPullConsumer) getNextQueueOf(topic string) *primitive.MessageQu
 	atomic.AddInt64(&pc.nextQueueSequence, 1)
 
 	nextQueue := queues[index]
-	rlog.Info("defaultPullConsumer.getNextQueueOf", map[string]interface{}{
+	rlog.Info(ctx, "defaultPullConsumer.getNextQueueOf", map[string]interface{}{
 		rlog.LogKeyTopic:                topic,
 		rlog.LogKeyConsumerGroup:        pc.consumerGroup,
 		rlog.LogKeyMessageQueue:         queues,
@@ -537,8 +537,8 @@ func (pc *defaultPullConsumer) pull(ctx context.Context, mq *primitive.MessageQu
 	return pullResp, err
 }
 
-func (pc *defaultPullConsumer) nextOffsetOf(queue *primitive.MessageQueue) (int64, error) {
-	return pc.computePullFromWhereWithException(queue)
+func (pc *defaultPullConsumer) nextOffsetOf(ctx context.Context, queue *primitive.MessageQueue) (int64, error) {
+	return pc.computePullFromWhereWithException(ctx, queue)
 }
 
 // PullFrom pull messages of queue from the offset to offset + numbers
@@ -553,27 +553,27 @@ func (pc *defaultPullConsumer) PullFrom(ctx context.Context, queue *primitive.Me
 }
 
 // UpdateOffset updateOffset update offset of queue in mem
-func (pc *defaultPullConsumer) UpdateOffset(queue *primitive.MessageQueue, offset int64) error {
+func (pc *defaultPullConsumer) UpdateOffset(ctx context.Context, queue *primitive.MessageQueue, offset int64) error {
 	return pc.updateOffset(queue, offset)
 }
 
 // PersistOffset persist all offset in mem.
 func (pc *defaultPullConsumer) PersistOffset(ctx context.Context, topic string) error {
-	return pc.persistConsumerOffset()
+	return pc.persistConsumerOffset(ctx)
 }
 
-func (pc *defaultPullConsumer) PersistOffsetSync() error {
-	return pc.persistConsumerOffsetSync()
+func (pc *defaultPullConsumer) PersistOffsetSync(ctx context.Context) error {
+	return pc.persistConsumerOffsetSync(ctx)
 }
 
 // CurrentOffset return the current offset of queue in mem.
-func (pc *defaultPullConsumer) CurrentOffset(queue *primitive.MessageQueue) (int64, error) {
-	v := pc.queryOffset(queue)
+func (pc *defaultPullConsumer) CurrentOffset(ctx context.Context, queue *primitive.MessageQueue) (int64, error) {
+	v := pc.queryOffset(ctx, queue)
 	return v, nil
 }
 
 // Shutdown close defaultConsumer, refuse new request.
-func (pc *defaultPullConsumer) Shutdown() error {
+func (pc *defaultPullConsumer) Shutdown(ctx context.Context) error {
 	var err error
 	pc.closeOnce.Do(func() {
 		if pc.option.TraceDispatcher != nil {
@@ -582,21 +582,21 @@ func (pc *defaultPullConsumer) Shutdown() error {
 		close(pc.done)
 
 		pc.client.UnregisterConsumer(pc.consumerGroup)
-		err = pc.defaultConsumer.shutdown()
+		err = pc.defaultConsumer.shutdown(ctx)
 	})
 
 	return err
 }
 
-func (pc *defaultPullConsumer) PersistConsumerOffset() error {
-	return pc.defaultConsumer.persistConsumerOffset()
+func (pc *defaultPullConsumer) PersistConsumerOffset(ctx context.Context) error {
+	return pc.defaultConsumer.persistConsumerOffset(ctx)
 }
 
-func (pc *defaultPullConsumer) UpdateTopicSubscribeInfo(topic string, mqs []*primitive.MessageQueue) {
+func (pc *defaultPullConsumer) UpdateTopicSubscribeInfo(ctx context.Context, topic string, mqs []*primitive.MessageQueue) {
 	pc.defaultConsumer.updateTopicSubscribeInfo(topic, mqs)
 }
 
-func (pc *defaultPullConsumer) IsSubscribeTopicNeedUpdate(topic string) bool {
+func (pc *defaultPullConsumer) IsSubscribeTopicNeedUpdate(ctx context.Context, topic string) bool {
 	return pc.defaultConsumer.isSubscribeTopicNeedUpdate(topic)
 }
 
@@ -630,38 +630,38 @@ func (pc *defaultPullConsumer) GetWhere() string {
 
 }
 
-func (pc *defaultPullConsumer) Rebalance() {
+func (pc *defaultPullConsumer) Rebalance(ctx context.Context) {
 	switch pc.SubType {
 	case Assign:
-		pc.RebalanceViaTopic()
+		pc.RebalanceViaTopic(ctx)
 		break
 	case Subscribe:
-		pc.defaultConsumer.doBalance()
+		pc.defaultConsumer.doBalance(ctx)
 		break
 	}
 }
 
-func (pc *defaultPullConsumer) RebalanceIfNotPaused() {
+func (pc *defaultPullConsumer) RebalanceIfNotPaused(ctx context.Context) {
 	switch pc.SubType {
 	case Assign:
-		pc.RebalanceViaTopic()
+		pc.RebalanceViaTopic(ctx)
 		break
 	case Subscribe:
-		pc.defaultConsumer.doBalanceIfNotPaused()
+		pc.defaultConsumer.doBalanceIfNotPaused(ctx)
 		break
 	}
 }
 
-func (pc *defaultPullConsumer) RebalanceViaTopic() {
-	changed := pc.defaultConsumer.updateProcessQueueTable(pc.topic, pc.allocateQueues)
+func (pc *defaultPullConsumer) RebalanceViaTopic(ctx context.Context) {
+	changed := pc.defaultConsumer.updateProcessQueueTable(ctx, pc.topic, pc.allocateQueues)
 	if changed {
-		rlog.Info("PullConsumer rebalance result changed ", map[string]interface{}{
+		rlog.Info(ctx, "PullConsumer rebalance result changed ", map[string]interface{}{
 			rlog.LogKeyAllocateMessageQueue: pc.allocateQueues,
 		})
 	}
 }
 
-func (pc *defaultPullConsumer) GetConsumerRunningInfo(stack bool) *internal.ConsumerRunningInfo {
+func (pc *defaultPullConsumer) GetConsumerRunningInfo(ctx context.Context, stack bool) *internal.ConsumerRunningInfo {
 	info := internal.NewConsumerRunningInfo()
 
 	pc.subscriptionDataTable.Range(func(key, value interface{}) bool {
@@ -683,7 +683,7 @@ func (pc *defaultPullConsumer) GetConsumerRunningInfo(stack bool) *internal.Cons
 		mq := key.(primitive.MessageQueue)
 		pq := value.(*processQueue)
 		pInfo := pq.currentInfo()
-		pInfo.CommitOffset, _ = pc.storage.readWithException(&mq, _ReadMemoryThenStore)
+		pInfo.CommitOffset, _ = pc.storage.readWithException(ctx, &mq, _ReadMemoryThenStore)
 		info.MQTable[mq] = pInfo
 		return true
 	})
@@ -693,7 +693,7 @@ func (pc *defaultPullConsumer) GetConsumerRunningInfo(stack bool) *internal.Cons
 
 		err := pprof.Lookup("goroutine").WriteTo(&buffer, 2)
 		if err != nil {
-			rlog.Error("error when get stack ", map[string]interface{}{
+			rlog.Error(ctx, "error when get stack ", map[string]interface{}{
 				"error": err,
 			})
 		} else {
@@ -713,27 +713,27 @@ func (pc *defaultPullConsumer) GetConsumerRunningInfo(stack bool) *internal.Cons
 	return info
 }
 
-func (pc *defaultPullConsumer) ConsumeMessageDirectly(msg *primitive.MessageExt, brokerName string) *internal.ConsumeMessageDirectlyResult {
+func (pc *defaultPullConsumer) ConsumeMessageDirectly(ctx context.Context, msg *primitive.MessageExt, brokerName string) *internal.ConsumeMessageDirectlyResult {
 	return nil
 }
 
-func (pc *defaultPullConsumer) ResetOffset(topic string, table map[primitive.MessageQueue]int64) {
+func (pc *defaultPullConsumer) ResetOffset(ctx context.Context, topic string, table map[primitive.MessageQueue]int64) {
 
 }
 
-func (pc *defaultPullConsumer) SeekOffset(mq *primitive.MessageQueue, offset int64) {
+func (pc *defaultPullConsumer) SeekOffset(ctx context.Context, mq *primitive.MessageQueue, offset int64) {
 	pc.mq2seekOffset.Store(*mq, offset)
-	rlog.Info("pull consumer seek offset", map[string]interface{}{
+	rlog.Info(ctx, "pull consumer seek offset", map[string]interface{}{
 		"mq":     mq,
 		"offset": offset,
 	})
 }
 
-func (pc *defaultPullConsumer) OffsetForTimestamp(mq *primitive.MessageQueue, timestamp int64) (int64, error) {
-	return pc.searchOffsetByTimestamp(mq, timestamp)
+func (pc *defaultPullConsumer) OffsetForTimestamp(ctx context.Context, mq *primitive.MessageQueue, timestamp int64) (int64, error) {
+	return pc.searchOffsetByTimestamp(ctx, mq, timestamp)
 }
 
-func (pc *defaultPullConsumer) messageQueueChanged(topic string, mqAll, mqDivided []*primitive.MessageQueue) {
+func (pc *defaultPullConsumer) messageQueueChanged(ctx context.Context, topic string, mqAll, mqDivided []*primitive.MessageQueue) {
 	if pc.SubType == Assign {
 		return
 	}
@@ -745,10 +745,10 @@ func (pc *defaultPullConsumer) messageQueueChanged(topic string, mqAll, mqDivide
 		return true
 	})
 	pc.allocateQueues = allocateQueues
-	pc.defaultConsumer.client.SendHeartbeatToAllBrokerWithLock()
+	pc.defaultConsumer.client.SendHeartbeatToAllBrokerWithLock(ctx)
 }
 
-func (pc *defaultPullConsumer) sendMessageBack(brokerName string, msg *primitive.MessageExt, delayLevel int) bool {
+func (pc *defaultPullConsumer) sendMessageBack(ctx context.Context, brokerName string, msg *primitive.MessageExt, delayLevel int) bool {
 	var brokerAddr string
 	if len(brokerName) != 0 {
 		brokerAddr = pc.defaultConsumer.client.GetNameSrv().FindBrokerAddrByName(brokerName)
@@ -758,7 +758,7 @@ func (pc *defaultPullConsumer) sendMessageBack(brokerName string, msg *primitive
 	resp, err := pc.client.InvokeSync(context.Background(), brokerAddr, pc.buildSendBackRequest(msg, delayLevel), 3*time.Second)
 	if err != nil || resp.Code != internal.ResSuccess {
 		// send back as a normal message
-		return pc.defaultConsumer.sendMessageBackAsNormal(msg, pc.getMaxReconsumeTimes())
+		return pc.defaultConsumer.sendMessageBackAsNormal(ctx, msg, pc.getMaxReconsumeTimes())
 	}
 	return true
 }
@@ -785,8 +785,8 @@ func (pc *defaultPullConsumer) getMaxReconsumeTimes() int32 {
 	}
 }
 
-func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
-	rlog.Debug("defaultPullConsumer start a new Pull Message task for PullRequest", map[string]interface{}{
+func (pc *defaultPullConsumer) pullMessage(ctx context.Context, request *PullRequest) {
+	rlog.Debug(ctx, "defaultPullConsumer start a new Pull Message task for PullRequest", map[string]interface{}{
 		rlog.LogKeyPullRequest: request.String(),
 	})
 	var sleepTime time.Duration
@@ -795,14 +795,14 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 		for {
 			select {
 			case <-pc.done:
-				rlog.Info("defaultPullConsumer close pullMessage.", map[string]interface{}{
+				rlog.Info(ctx, "defaultPullConsumer close pullMessage.", map[string]interface{}{
 					rlog.LogKeyConsumerGroup: pc.consumerGroup,
 				})
 				return
 			default:
-				pc.submitToConsume(request.pq, request.mq)
+				pc.submitToConsume(ctx, request.pq, request.mq)
 				if request.pq.IsDroppd() {
-					rlog.Info("defaultPullConsumer quit pullMessage for dropped queue.", map[string]interface{}{
+					rlog.Info(ctx, "defaultPullConsumer quit pullMessage for dropped queue.", map[string]interface{}{
 						rlog.LogKeyConsumerGroup: pc.consumerGroup,
 					})
 					return
@@ -814,7 +814,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 	NEXT:
 		select {
 		case <-pc.done:
-			rlog.Info("defaultPullConsumer close message handle.", map[string]interface{}{
+			rlog.Info(ctx, "defaultPullConsumer close message handle.", map[string]interface{}{
 				rlog.LogKeyConsumerGroup: pc.consumerGroup,
 			})
 			return
@@ -822,13 +822,13 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 		}
 
 		if pq.IsDroppd() {
-			rlog.Debug("defaultPullConsumer the request was dropped, so stop task", map[string]interface{}{
+			rlog.Debug(ctx, "defaultPullConsumer the request was dropped, so stop task", map[string]interface{}{
 				rlog.LogKeyPullRequest: request.String(),
 			})
 			return
 		}
 		if sleepTime > 0 {
-			rlog.Debug(fmt.Sprintf("defaultPullConsumer pull MessageQueue: %d sleep %d ms for mq: %v", request.mq.QueueId, sleepTime/time.Millisecond, request.mq), nil)
+			rlog.Debug(ctx, fmt.Sprintf("defaultPullConsumer pull MessageQueue: %d sleep %d ms for mq: %v", request.mq.QueueId, sleepTime/time.Millisecond, request.mq), nil)
 			time.Sleep(sleepTime)
 		}
 		// reset time
@@ -836,7 +836,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 		pq.lastPullTime.Store(time.Now())
 		err := pc.makeSureStateOK()
 		if err != nil {
-			rlog.Warning("defaultPullConsumer state error", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer state error", map[string]interface{}{
 				rlog.LogKeyUnderlayError: err.Error(),
 			})
 			sleepTime = _PullDelayTimeWhenError
@@ -844,7 +844,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 		}
 
 		if pc.pause.Load() {
-			rlog.Debug(fmt.Sprintf("defaultPullConsumer [%s] of [%s] was paused, execute pull request [%s] later",
+			rlog.Debug(ctx, fmt.Sprintf("defaultPullConsumer [%s] of [%s] was paused, execute pull request [%s] later",
 				pc.option.InstanceName, pc.consumerGroup, request.String()), nil)
 			sleepTime = _PullDelayTimeWhenSuspend
 			goto NEXT
@@ -852,14 +852,14 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 
 		v, exist := pc.subscriptionDataTable.Load(request.mq.Topic)
 		if !exist {
-			rlog.Info("defaultPullConsumer find the consumer's subscription failed", map[string]interface{}{
+			rlog.Info(ctx, "defaultPullConsumer find the consumer's subscription failed", map[string]interface{}{
 				rlog.LogKeyPullRequest: request.String(),
 			})
 			sleepTime = _PullDelayTimeWhenError
 			goto NEXT
 		}
 
-		nextOffset := pc.nextPullOffset(request.mq, request.nextOffset)
+		nextOffset := pc.nextPullOffset(ctx, request.mq, request.nextOffset)
 		beginTime := time.Now()
 		sd := v.(*internal.SubscriptionData)
 
@@ -879,9 +879,9 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 			BrokerName:           request.mq.BrokerName,
 		}
 
-		brokerResult := pc.defaultConsumer.tryFindBroker(request.mq)
+		brokerResult := pc.defaultConsumer.tryFindBroker(ctx, request.mq)
 		if brokerResult == nil {
-			rlog.Warning("defaultPullConsumer no broker found for mq", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer no broker found for mq", map[string]interface{}{
 				rlog.LogKeyPullRequest: request.mq.String(),
 			})
 			sleepTime = _PullDelayTimeWhenError
@@ -892,11 +892,11 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 			pullRequest.SysFlag = clearCommitOffsetFlag(pullRequest.SysFlag)
 		}
 
-		rlog.Debug(fmt.Sprintf("defaultPullConsumer pull message from broker: %s, request: %+v", brokerResult.BrokerAddr, pullRequest), nil)
+		rlog.Debug(ctx, fmt.Sprintf("defaultPullConsumer pull message from broker: %s, request: %+v", brokerResult.BrokerAddr, pullRequest), nil)
 
-		result, err := pc.client.PullMessage(context.Background(), brokerResult.BrokerAddr, pullRequest)
+		result, err := pc.client.PullMessage(ctx, brokerResult.BrokerAddr, pullRequest)
 		if err != nil {
-			rlog.Warning("defaultPullConsumer pull message from broker error", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer pull message from broker error", map[string]interface{}{
 				rlog.LogKeyBroker:        brokerResult.BrokerAddr,
 				rlog.LogKeyUnderlayError: err.Error(),
 			})
@@ -905,7 +905,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 		}
 
 		if result.Status == primitive.PullBrokerTimeout {
-			rlog.Warning("defaultPullConsumer pull broker timeout", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer pull broker timeout", map[string]interface{}{
 				rlog.LogKeyBroker: brokerResult.BrokerAddr,
 			})
 			sleepTime = _PullDelayTimeWhenError
@@ -916,7 +916,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 
 		switch result.Status {
 		case primitive.PullFound:
-			rlog.Debug(fmt.Sprintf("Topic: %s, QueueId: %d found messages.", request.mq.Topic, request.mq.QueueId), nil)
+			rlog.Debug(ctx, fmt.Sprintf("Topic: %s, QueueId: %d found messages.", request.mq.Topic, request.mq.QueueId), nil)
 			prevRequestOffset := request.nextOffset
 			request.nextOffset = result.NextBeginOffset
 
@@ -931,7 +931,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 				pq.putMessage(msgFounded...)
 			}
 			if result.NextBeginOffset < prevRequestOffset || firstMsgOffset < prevRequestOffset {
-				rlog.Warning("[BUG] pull message result maybe data wrong", map[string]interface{}{
+				rlog.Warning(ctx, "[BUG] pull message result maybe data wrong", map[string]interface{}{
 					"nextBeginOffset":   result.NextBeginOffset,
 					"firstMsgOffset":    firstMsgOffset,
 					"prevRequestOffset": prevRequestOffset,
@@ -941,7 +941,7 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 			request.nextOffset = result.NextBeginOffset
 			pc.correctTagsOffset(request)
 		case primitive.PullOffsetIllegal:
-			rlog.Warning("defaultPullConsumer the pull request offset illegal", map[string]interface{}{
+			rlog.Warning(ctx, "defaultPullConsumer the pull request offset illegal", map[string]interface{}{
 				rlog.LogKeyPullRequest: request.String(),
 				"result":               result.String(),
 			})
@@ -949,11 +949,11 @@ func (pc *defaultPullConsumer) pullMessage(request *PullRequest) {
 			pq.WithDropped(true)
 			time.Sleep(10 * time.Second)
 			pc.storage.update(request.mq, request.nextOffset, false)
-			pc.storage.persist([]*primitive.MessageQueue{request.mq})
+			pc.storage.persist(ctx, []*primitive.MessageQueue{request.mq})
 			pc.processQueueTable.Delete(*request.mq)
-			rlog.Warning(fmt.Sprintf("defaultPullConsumer fix the pull request offset: %s", request.String()), nil)
+			rlog.Warning(ctx, fmt.Sprintf("defaultPullConsumer fix the pull request offset: %s", request.String()), nil)
 		default:
-			rlog.Warning(fmt.Sprintf("defaultPullConsumer unknown pull status: %v", result.Status), nil)
+			rlog.Warning(ctx, fmt.Sprintf("defaultPullConsumer unknown pull status: %v", result.Status), nil)
 			sleepTime = _PullDelayTimeWhenError
 		}
 	}
@@ -965,13 +965,13 @@ func (pc *defaultPullConsumer) correctTagsOffset(pr *PullRequest) {
 	}
 }
 
-func (pc *defaultPullConsumer) consumeMessageConcurrently(pq *processQueue, mq *primitive.MessageQueue) {
+func (pc *defaultPullConsumer) consumeMessageConcurrently(ctx context.Context, pq *processQueue, mq *primitive.MessageQueue) {
 	msgList := pq.getMessages()
 	if msgList == nil {
 		return
 	}
 	if pq.IsDroppd() {
-		rlog.Info("defaultPullConsumer consumeMessageConcurrently the message queue not be able to consume, because it was dropped", map[string]interface{}{
+		rlog.Info(ctx, "defaultPullConsumer consumeMessageConcurrently the message queue not be able to consume, because it was dropped", map[string]interface{}{
 			rlog.LogKeyMessageQueue:  mq.String(),
 			rlog.LogKeyConsumerGroup: pc.consumerGroup,
 		})
@@ -990,7 +990,7 @@ func (pc *defaultPullConsumer) consumeMessageConcurrently(pq *processQueue, mq *
 	}
 }
 
-func (pc *defaultPullConsumer) GetConsumerStatus(topic string) *internal.ConsumerStatus {
+func (pc *defaultPullConsumer) GetConsumerStatus(ctx context.Context, topic string) *internal.ConsumerStatus {
 	consumerStatus := internal.NewConsumerStatus()
 	mqOffsetMap := pc.storage.getMQOffsetMap(topic)
 	if mqOffsetMap != nil {

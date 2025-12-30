@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/apache/rocketmq-client-go/v2/rlog"
 	"os"
@@ -46,7 +47,7 @@ func registerCommand(name string, cmd command) {
 }
 
 func usage() {
-	rlog.Info("Command", map[string]interface{}{
+	rlog.Info(context.Background(), "Command", map[string]interface{}{
 		"name": os.Args[0],
 	})
 	for _, cmd := range cmds {
@@ -57,7 +58,7 @@ func usage() {
 // go run *.go [command name] [command args]
 func main() {
 	if len(os.Args) < 2 {
-		rlog.Error("Lack Command Name", nil)
+		rlog.Error(context.Background(), "Lack Command Name", nil)
 		usage()
 		return
 	}
@@ -65,7 +66,7 @@ func main() {
 	name := os.Args[1]
 	cmd, ok := cmds[name]
 	if !ok {
-		rlog.Error("Command Isn't Supported", map[string]interface{}{
+		rlog.Error(context.Background(), "Command Isn't Supported", map[string]interface{}{
 			"command": name,
 		})
 		usage()
