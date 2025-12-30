@@ -339,6 +339,22 @@ func (dc *defaultConsumer) persistConsumerOffset() error {
 	return nil
 }
 
+func (dc *defaultConsumer) persistConsumerOffsetSync() error {
+	err := dc.makeSureStateOK()
+	if err != nil {
+		return err
+	}
+
+	mqs := make([]*primitive.MessageQueue, 0)
+	dc.processQueueTable.Range(func(key, value interface{}) bool {
+		k := key.(primitive.MessageQueue)
+		mqs = append(mqs, &k)
+		return true
+	})
+
+	return dc.storage.persistSync(mqs)
+}
+
 func (dc *defaultConsumer) updateOffset(queue *primitive.MessageQueue, offset int64) error {
 	dc.storage.update(queue, offset, false)
 	return nil

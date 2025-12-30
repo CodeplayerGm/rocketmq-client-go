@@ -55,6 +55,7 @@ func init() {
 //go:generate mockgen -source offset_store.go -destination mock_offset_store.go -self_package github.com/apache/rocketmq-client-go/v2/consumer  --package consumer OffsetStore
 type OffsetStore interface {
 	persist(mqs []*primitive.MessageQueue)
+	persistSync(mqs []*primitive.MessageQueue) error
 	remove(mq *primitive.MessageQueue)
 	read(mq *primitive.MessageQueue, t readType) int64
 	readWithException(mq *primitive.MessageQueue, t readType) (int64, error)
@@ -225,6 +226,34 @@ func (local *localFileOffsetStore) persist(mqs []*primitive.MessageQueue) {
 	utils.CheckError(fmt.Sprintf("persist offset to %s", local.path), utils.WriteToFile(local.path, data))
 }
 
+func (local *localFileOffsetStore) persistSync(mqs []*primitive.MessageQueue) error {
+	if len(mqs) == 0 {
+		return nil
+	}
+	local.mutex.Lock()
+	defer local.mutex.Unlock()
+
+	datas := make(map[MessageQueueKey]int64)
+	local.OffsetTable.Range(func(key, value interface{}) bool {
+		k := key.(MessageQueueKey)
+		v := value.(int64)
+		datas[k] = v
+		return true
+	})
+
+	wrapper := OffsetSerializeWrapper{
+		OffsetTable: datas,
+	}
+	data, _ := jsoniter.Marshal(wrapper)
+
+	err := utils.WriteToFile(local.path, data)
+	if err != nil {
+		utils.CheckError(fmt.Sprintf("persist offset to %s", local.path), err)
+		return err
+	}
+	return nil
+}
+
 func (local *localFileOffsetStore) remove(mq *primitive.MessageQueue) {
 	// nothing to do
 }
@@ -291,6 +320,44 @@ func (r *remoteBrokerOffsetStore) persist(mqs []*primitive.MessageQueue) {
 			})
 		}
 	}
+}
+
+func (r *remoteBrokerOffsetStore) persistSync(mqs []*primitive.MessageQueue) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if len(mqs) == 0 {
+		return nil
+	}
+
+	used := make(map[primitive.MessageQueue]struct{}, 0)
+	for _, mq := range mqs {
+		used[*mq] = struct{}{}
+	}
+
+	for mq, off := range r.OffsetTable {
+		if _, ok := used[mq]; !ok {
+			delete(r.OffsetTable, mq)
+			continue
+		}
+
+		err := r.updateConsumeOffsetToBrokerSync(r.group, mq, off)
+		if err != nil {
+			rlog.Warning("update offset to broker error", map[string]interface{}{
+				rlog.LogKeyConsumerGroup: r.group,
+				rlog.LogKeyMessageQueue:  mq.String(),
+				rlog.LogKeyUnderlayError: err.Error(),
+				"offset":                 off,
+			})
+			return err
+		}
+
+		rlog.Info("update offset to broker success", map[string]interface{}{
+			rlog.LogKeyConsumerGroup: r.group,
+			rlog.LogKeyMessageQueue:  mq.String(),
+			"offset":                 off,
+		})
+	}
+	return nil
 }
 
 func (r *remoteBrokerOffsetStore) remove(mq *primitive.MessageQueue) {
@@ -434,6 +501,36 @@ func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBroker(group string, mq p
 	}
 	cmd := remote.NewRemotingCommand(internal.ReqUpdateConsumerOffset, updateOffsetRequest, nil)
 	return r.client.InvokeOneWay(context.Background(), broker, cmd, 5*time.Second)
+}
+
+func (r *remoteBrokerOffsetStore) updateConsumeOffsetToBrokerSync(group string, mq primitive.MessageQueue, off int64) error {
+	broker := r.namesrv.FindBrokerAddrByName(mq.BrokerName)
+	if broker == "" {
+		r.namesrv.UpdateTopicRouteInfo(mq.Topic)
+		broker = r.namesrv.FindBrokerAddrByName(mq.BrokerName)
+	}
+	if broker == "" {
+		return fmt.Errorf("broker: %s address not found", mq.BrokerName)
+	}
+
+	updateOffsetRequest := &internal.UpdateConsumerOffsetRequestHeader{
+		ConsumerGroup: group,
+		Topic:         mq.Topic,
+		QueueId:       mq.QueueId,
+		CommitOffset:  off,
+		BrokerName:    mq.BrokerName,
+	}
+	cmd := remote.NewRemotingCommand(internal.ReqUpdateConsumerOffset, updateOffsetRequest, nil)
+
+	resp, err := r.client.InvokeSync(context.Background(), broker, cmd, 5*time.Second)
+	if err != nil {
+		return err
+	}
+
+	if resp.Code != internal.ResSuccess {
+		return fmt.Errorf("update consumer offset to broker response not success, code: %d, remark: %s", resp.Code, resp.Remark)
+	}
+	return nil
 }
 
 func readFromMemory(table *sync.Map, mq *primitive.MessageQueue) int64 {

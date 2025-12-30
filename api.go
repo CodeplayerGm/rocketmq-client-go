@@ -100,7 +100,7 @@ type PullConsumer interface {
 	// Poll messages with timeout.
 	Poll(ctx context.Context, timeout time.Duration) (*consumer.ConsumeRequest, error)
 
-	//ACK ACK
+	// ACK ACK
 	ACK(ctx context.Context, cr *consumer.ConsumeRequest, consumeResult consumer.ConsumeResult)
 
 	// Pull message of topic,  selector indicate which queue to pull.
@@ -120,6 +120,8 @@ type PullConsumer interface {
 
 	// PersistOffset persist all offset in mem.
 	PersistOffset(ctx context.Context, topic string) error
+
+	PersistOffsetSync() error
 
 	// CurrentOffset return the current offset of queue in mem.
 	CurrentOffset(queue *primitive.MessageQueue) (int64, error)

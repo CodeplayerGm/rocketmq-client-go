@@ -562,6 +562,10 @@ func (pc *defaultPullConsumer) PersistOffset(ctx context.Context, topic string) 
 	return pc.persistConsumerOffset()
 }
 
+func (pc *defaultPullConsumer) PersistOffsetSync() error {
+	return pc.persistConsumerOffsetSync()
+}
+
 // CurrentOffset return the current offset of queue in mem.
 func (pc *defaultPullConsumer) CurrentOffset(queue *primitive.MessageQueue) (int64, error) {
 	v := pc.queryOffset(queue)
