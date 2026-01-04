@@ -99,6 +99,12 @@ func WithCustomDialer(dialer proxy.Dialer) AdminOption {
 	}
 }
 
+func WithInstanceName(name string) AdminOption {
+	return func(options *adminOptions) {
+		options.ClientOptions.InstanceName = name
+	}
+}
+
 type admin struct {
 	cli internal.RMQClient
 
